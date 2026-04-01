@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>정말 잘할 수 있을까요></title>
+    <title>정투상도 -> 등각투상도 손 그리기 연습</title>
     <style>
         :root {
             --primary-color: #3498db;
@@ -12,7 +12,6 @@
             --bg-color: #f4f7f6;
             --panel-bg: white;
             --text-color: #333;
-            --line-color: #2c3e50; /* 사용자가 그리는 선 색 */
         }
 
         body {
@@ -35,6 +34,7 @@
             border-radius: 12px;
             box-shadow: 0 8px 25px rgba(0,0,0,0.07);
             display: flex;
+            flex-wrap: wrap;
             gap: 25px;
             max-width: 1000px;
             width: 100%;
@@ -42,7 +42,7 @@
 
         /* 왼쪽: 문제 영역 (정투상도) */
         .problem-panel {
-            flex: 0 0 300px;
+            flex: 1 1 300px;
             display: flex;
             flex-direction: column;
             align-items: center;
@@ -81,14 +81,13 @@
         .ortho-cell { width: 30px; height: 30px; background-color: white; }
         .ortho-cell.filled { background-color: #34495e; }
 
-        /* 제3각법 배치 조정 */
         .pos-top { grid-column: 1; grid-row: 1; }
         .pos-front { grid-column: 1; grid-row: 2; }
         .pos-right { grid-column: 2; grid-row: 2; }
 
         /* 오른쪽: 그리기 영역 (등각투상 캔버스) */
         .drawing-panel {
-            flex: 1;
+            flex: 2 1 500px;
             display: flex;
             flex-direction: column;
             align-items: center;
@@ -103,9 +102,10 @@
             background-color: white;
             border: 1px solid #dfe4ea;
             cursor: crosshair;
+            touch-action: none; /* 모바일에서 드래그 시 화면 스크롤 방지 */
         }
 
-        canvas { display: block; }
+        canvas { display: block; max-width: 100%; height: auto; }
 
         .toolbar {
             margin-top: 15px;
@@ -132,7 +132,6 @@
         
         #btn-evaluate { background-color: var(--success-color); flex-grow: 1; }
         #btn-evaluate:hover { background-color: #27ae60; }
-
         #btn-new { background-color: var(--primary-color); }
 
         #result-message {
@@ -145,6 +144,9 @@
         .correct { color: var(--success-color); }
         .incorrect { color: var(--danger-color); }
 
+        @media (max-width: 768px) {
+            .problem-panel { border-right: none; border-bottom: 1px solid #eee; padding-right: 0; padding-bottom: 25px; }
+        }
     </style>
 </head>
 <body>
@@ -152,8 +154,7 @@
     <h1>등각투상도 손 그리기 연습</h1>
     <p class="desc">
         왼쪽의 정투상도를 보고 오른쪽 캔버스에 입체 도형을 그리세요.<br>
-        <strong>캔버스의 점(Dot) 근처에서 드래그하면 선이 자동으로 점에 맞춰집니다.</strong><br>
-        (주의: 보이지 않는 뒤쪽 모서리는 그리지 마세요.)
+        <strong>캔버스의 점 근처에서 드래그하면 선이 자동으로 점에 맞춰집니다.</strong>
     </p>
 
     <div class="app-container">
@@ -174,8 +175,8 @@
                     <div id="target-right" class="ortho-grid"></div>
                 </div>
             </div>
-            <div style="margin-top: auto; width: 100%;">
-                <button id="btn-new" style="width: 100%;">새로운 문제 생성</button>
+            <div style="margin-top: 20px; width: 100%; display: flex; justify-content: center;">
+                <button id="btn-new" style="width: 100%; max-width: 260px;">새로운 문제 생성</button>
             </div>
         </div>
 
@@ -186,8 +187,8 @@
             </div>
             
             <div class="toolbar">
-                <button id="btn-undo" class="btn-action">한 단계 취소</button>
-                <button id="btn-clear" class="btn-action">전체 지우기</button>
+                <button id="btn-undo" class="btn-action">실행 취소</button>
+                <button id="btn-clear" class="btn-action">모두 지우기</button>
                 <button id="btn-evaluate">채점하기</button>
             </div>
 
@@ -196,34 +197,22 @@
     </div>
 
     <script>
-        /**
-         * 구성: 
-         * 1. TargetData: 랜덤 생성된 3D 데이터 및 정답 투상도 계산
-         * 2. IsoGrid: 캔버스 배경의 점 격자 관리 및 스냅(보조) 로직
-         * 3. DrawingEngine: 사용자의 선 그리기 이벤트 처리 및 렌더링
-         * 4. Evaluator: 정답 판별
-         */
+        let currentTarget = null;
 
-        // --- 전역 설정 및 상태 ---
-        let currentTarget = null; // 현재 문제 데이터
-
-        // --- 1. Target Data Generator (문제 생성) ---
+        // --- 1. Target Data Generator ---
         const TargetGenerator = (() => {
-            // max 3x3x3 grid
             const generateRawShape = () => {
                 let shape = [];
                 let hasBlock = false;
                 for (let z = 0; z < 3; z++) {
                     let row = [];
                     for (let x = 0; x < 3; x++) {
-                        // 확률적 높이 배정 (0~3)
                         let h = Math.random() > 0.4 ? Math.floor(Math.random() * 3) + 1 : 0;
                         if (h > 0) hasBlock = true;
                         row.push(h);
                     }
                     shape.push(row);
                 }
-                // 안전장치
                 if (!hasBlock) shape[1][1] = 2; 
                 return shape;
             };
@@ -236,12 +225,8 @@
                 for(let z=0; z<3; z++) {
                     for(let x=0; x<3; x++) {
                         let h = shape[z][x];
-                        if (h > 0) top[z][x] = 1; // 평면
-
-                        // 정면 (X축 너비)
+                        if (h > 0) top[z][x] = 1;
                         for(let y=0; y<h; y++) front[2-y][x] = 1;
-
-                        // 우측면 (Z축 깊이, 오른쪽에서 보므로 Z=2가 도면 좌측)
                         for(let y=0; y<h; y++) right[2-y][2-z] = 1;
                     }
                 }
@@ -257,7 +242,6 @@
             };
         })();
 
-        // UI에 문제 출력
         function renderProblem(target) {
             const drawGrid = (id, data) => {
                 const container = document.getElementById(id);
@@ -276,29 +260,23 @@
             drawGrid('target-right', target.projections.right);
         }
 
-
-        // --- 2. Iso Grid & Point System (격자 및 보조 로직) ---
+        // --- 2. Iso Grid System ---
         const IsoGrid = (() => {
             const canvas = document.getElementById('main-canvas');
             const ctx = canvas.getContext('2d');
-            
-            // 설정
-            const unitSize = 50; // 등각 한 변 크기
+            const unitSize = 50; 
             const cos30 = Math.sqrt(3) / 2;
             const sin30 = 0.5;
-            // 3x3x3 boundary box를 위한 도트 좌표계 생성
             const startX = canvas.width / 2;
-            const startY = 120; // 상단 여백
+            const startY = 150; 
 
-            let points = []; // 모든 격자점 좌표 {x, y, 3dKey}
+            let points = [];
 
-            // 4x4x4 점 생성 (3x3x3 큐브 공간을 정의)
             const initPoints = () => {
                 points = [];
-                for (let iy = 0; iy <= 3; iy++) { // 높이
-                    for (let iz = 0; iz <= 3; iz++) { // 깊이
-                        for (let ix = 0; ix <= 3; ix++) { // 너비
-                            // 3D -> 2D 등각 변환
+                for (let iy = 0; iy <= 3; iy++) {
+                    for (let iz = 0; iz <= 3; iz++) {
+                        for (let ix = 0; ix <= 3; ix++) {
                             let sx = startX + (ix - iz) * unitSize * cos30;
                             let sy = startY + (ix + iz) * unitSize * sin30 - (iy * unitSize);
                             points.push({ x: sx, y: sy, ix, iy, iz });
@@ -307,7 +285,6 @@
                 }
             };
 
-            // 배경 점 그리기
             const drawDots = () => {
                 ctx.fillStyle = '#cbd5e1';
                 points.forEach(p => {
@@ -317,13 +294,10 @@
                 });
             };
 
-            // **핵심: 자동 보조 (Snap to grid)**
-            // 마우스 좌표 근처의 가장 가까운 격자점을 반환 (임계값 내)
             const getSnappedPoint = (mx, my) => {
-                const threshold = 25; // 픽셀 반경
+                const threshold = 30; // 스냅 범위 조정
                 let minDist = Infinity;
                 let closest = null;
-
                 for (let p of points) {
                     let d = Math.sqrt((mx - p.x)**2 + (my - p.y)**2);
                     if (d < threshold && d < minDist) {
@@ -335,51 +309,49 @@
             };
 
             initPoints();
-
             return { drawDots, getSnappedPoint, ctx, canvas };
         })();
 
-
-        // --- 3. Drawing Engine (사용자 선 그리기 인터랙션) ---
+        // --- 3. Drawing Engine ---
         const DrawingEngine = (() => {
             const { canvas, ctx } = IsoGrid;
-            let lines = []; // 저장된 선 배열 [{p1, p2}, ...]
-            
+            let lines = [];
             let isDragging = false;
-            let startPoint = null; // 드래그 시작 격자점
+            let startPoint = null;
             let currentMousePos = null;
 
             const init = () => {
-                canvas.addEventListener('mousedown', onMouseDown);
-                window.addEventListener('mousemove', onMouseMove);
-                window.addEventListener('mouseup', onMouseUp);
+                // 마우스 이벤트
+                canvas.addEventListener('mousedown', onPointerDown);
+                window.addEventListener('mousemove', onPointerMove);
+                window.addEventListener('mouseup', onPointerUp);
+                
+                // 터치 이벤트 지원 (모바일/태블릿)
+                canvas.addEventListener('touchstart', (e) => { e.preventDefault(); onPointerDown(e.touches[0]); }, { passive: false });
+                window.addEventListener('touchmove', (e) => { if(isDragging) onPointerMove(e.touches[0]); }, { passive: false });
+                window.addEventListener('touchend', onPointerUp);
             };
 
             const redraw = () => {
-                // 1. Clear
                 ctx.clearRect(0, 0, canvas.width, canvas.height);
-                
-                // 2. 배경 격자
                 IsoGrid.drawDots();
 
-                // 3. 임시 가이드 선 (드래그 중일 때)
+                // 가이드 라인 그리기 (수정된 부분: currentMousePos.Pos.y -> currentMousePos.y)
                 if (isDragging && startPoint && currentMousePos) {
                     let endPoint = IsoGrid.getSnappedPoint(currentMousePos.x, currentMousePos.y);
-                    
                     ctx.beginPath();
                     ctx.lineWidth = 2;
-                    ctx.setLineDash([5, 5]); // 점선
+                    ctx.setLineDash([5, 5]);
                     ctx.strokeStyle = '#94a3b8';
                     ctx.moveTo(startPoint.x, startPoint.y);
-                    // 스냅된 점이 있으면 거기로, 없으면 마우스 포인터로
-                    ctx.lineTo(endPoint ? endPoint.x : currentMousePos.x, endPoint ? endPoint.y : currentMousePos.Pos.y);
+                    ctx.lineTo(endPoint ? endPoint.x : currentMousePos.x, endPoint ? endPoint.y : currentMousePos.y);
                     ctx.stroke();
-                    ctx.setLineDash([]); // 실선 복구
+                    ctx.setLineDash([]);
                 }
 
-                // 4. 확정된 선들 그리기
+                // 확정된 선들 그리기
                 ctx.lineWidth = 3;
-                ctx.strokeStyle = '#2c3e50'; // var(--line-color)
+                ctx.strokeStyle = '#2c3e50';
                 ctx.lineCap = 'round';
                 lines.forEach(line => {
                     ctx.beginPath();
@@ -389,18 +361,20 @@
                 });
             };
 
-            // 마우스 이벤트 핸들러
-            const getMousePos = (e) => {
+            const getPointerPos = (e) => {
                 const rect = canvas.getBoundingClientRect();
+                // 캔버스 크기 비율에 따른 보정
+                const scaleX = canvas.width / rect.width;
+                const scaleY = canvas.height / rect.height;
                 return {
-                    x: e.clientX - rect.left,
-                    y: e.clientY - rect.top
+                    x: (e.clientX - rect.left) * scaleX,
+                    y: (e.clientY - rect.top) * scaleY
                 };
             };
 
-            const onMouseDown = (e) => {
+            const onPointerDown = (e) => {
                 document.getElementById('result-message').innerText = '';
-                const pos = getMousePos(e);
+                const pos = getPointerPos(e);
                 const snapped = IsoGrid.getSnappedPoint(pos.x, pos.y);
                 if (snapped) {
                     isDragging = true;
@@ -409,44 +383,39 @@
                 }
             };
 
-            const onMouseMove = (e) => {
+            const onPointerMove = (e) => {
                 if (!isDragging) return;
-                currentMousePos = getMousePos(e);
-                redraw(); // 가이드선 업데이트
+                currentMousePos = getPointerPos(e);
+                redraw();
             };
 
-            const onMouseUp = (e) => {
+            const onPointerUp = (e) => {
                 if (!isDragging) return;
-                
-                const pos = getMousePos(e);
-                const snappedEnd = IsoGrid.getSnappedPoint(pos.x, pos.y);
-
-                // 시작점과 끝점이 있고, 서로 다른 점일 때만 선 확정
-                if (snappedEnd && (startPoint.ix !== snappedEnd.ix || startPoint.iy !== snappedEnd.iy || startPoint.iz !== snappedEnd.iz)) {
-                    // 유효한 등각 방향 선인지 체크 (옵션 - 여기선 단순화 위해 생략)
-                    lines.push({ p1: startPoint, p2: snappedEnd });
+                if(currentMousePos) {
+                    const snappedEnd = IsoGrid.getSnappedPoint(currentMousePos.x, currentMousePos.y);
+                    if (snappedEnd && (startPoint.ix !== snappedEnd.ix || startPoint.iy !== snappedEnd.iy || startPoint.iz !== snappedEnd.iz)) {
+                        // 중복 선 방지
+                        const exists = lines.some(l => 
+                            (l.p1.x === startPoint.x && l.p1.y === startPoint.y && l.p2.x === snappedEnd.x && l.p2.y === snappedEnd.y) ||
+                            (l.p2.x === startPoint.x && l.p2.y === startPoint.y && l.p1.x === snappedEnd.x && l.p1.y === snappedEnd.y)
+                        );
+                        if(!exists) lines.push({ p1: startPoint, p2: snappedEnd });
+                    }
                 }
-
                 isDragging = false;
                 startPoint = null;
                 redraw();
             };
 
-            // 도구함 기능
             const undo = () => { lines.pop(); redraw(); };
             const clear = () => { lines = []; redraw(); };
 
             init();
-
             return { redraw, undo, clear, getLines: () => lines };
         })();
 
-
-        // --- 4. Evaluator (채점 시스템) ---
+        // --- 4. Evaluator ---
         const Evaluator = (() => {
-            // 그리기 입력 특성상 완벽한 3D 기하 비교는 매우 어려움 (정적 웹 제약)
-            // 이에 실용적인 "실루엣(Projection) 비교" 방식 채택.
-
             const evaluate = () => {
                 if (!currentTarget) return;
                 const drawnLines = DrawingEngine.getLines();
@@ -455,11 +424,10 @@
                     return;
                 }
 
-                // 1. 사용자가 그린 선들의 3면 투상도 계산 (실루엣 추출)
+                // 1. 선 기반 점유 공간 단순화 평가
                 const userProjections = calculateDrawnProjections(drawnLines);
                 const target = currentTarget.projections;
 
-                // 2. 비교
                 const isMatch = (arr1, arr2) => {
                     for(let r=0; r<3; r++) for(let c=0; c<3; c++) if(arr1[r][c] !== arr2[r][c]) return false;
                     return true;
@@ -469,65 +437,52 @@
                 const frontOK = isMatch(target.front, userProjections.front);
                 const rightOK = isMatch(target.right, userProjections.right);
 
-                // 3. 결과 출력
                 if (topOK && frontOK && rightOK) {
-                    // (심화 과제) 잉여 선(보이지 않는 선) 체크 로직이 있으면 더 완벽하나, 정적 환경 제약으로 생략.
                     showMessage('🎉 정답입니다! 정투상도와 일치하는 입체를 그렸습니다.', 'correct');
                 } else {
-                    showMessage('❌ 틀렸습니다. 정투상도의 모양과 입체의 실루엣이 다릅니다.', 'incorrect');
+                    showMessage('❌ 틀렸습니다. 정투상도를 다시 확인해 보세요.', 'incorrect');
                 }
             };
 
-            // 사용자가 그린 3D 선 데이터 -> 2D 투상 영역 계산
             const calculateDrawnProjections = (lines) => {
-                let top = [[0,0,0],[0,0,0],[0,0,0]], 
-                    front = [[0,0,0],[0,0,0],[0,0,0]], 
-                    right = [[0,0,0],[0,0,0],[0,0,0]];
+                let top = [[0,0,0],[0,0,0],[0,0,0]], front = [[0,0,0],[0,0,0],[0,0,0]], right = [[0,0,0],[0,0,0],[0,0,0]];
 
-                const markVoxelsBetweenPoints = (p1, p2, projectionGrid, viewMode) => {
-                    // 선의 양 끝점 3D 좌표
-                    let c1, c2;
-                    if(viewMode === 'top') { c1 = [p1.ix, p1.iz]; c2 = [p2.ix, p2.iz]; }
-                    else if(viewMode === 'front') { c1 = [p1.ix, 2-p1.iy]; c2 = [p2.ix, 2-p2.iy]; } // 도면 y축 반전
-                    else { c1 = [2-p1.iz, 2-p1.iy]; c2 = [2-p2.iz, 2-p2.iy]; } // 우측면 z축 반전
-
-                    // 단순화: 선의 끝점이 속한 칸을 마킹.
-                    // (점과 점 사이 칸을 채우는 Bresenham 알고리즘류가 필요하나 복잡도 낮추기 위해 끝점 위주 처리)
-                    const mark = (c) => {
-                        let r = c[1], col = c[0];
-                        // 0~2 범위 내에 있을 때만 마킹
-                        if(r>=0 && r<3 && col>=0 && col<3) projectionGrid[r][col] = 1;
-                        
-                        // 선이 칸 경계에 있을 때 인접 칸 처리 보정 (Bresenham 대용 단순 보정)
-                        // 높이(Y)에 대한 보정
-                        if(viewMode !== 'top') {
-                            // y좌표가 0.5단위인 경우 (칸 사이)
-                            // 여기선 격자점이 정수이므로 생략. 대신 voxel 개념을 위해 바닥 좌표 처리
-                            let h1 = p1.iy, h2 = p2.iy;
-                            let minH = Math.min(h1, h2), maxH = Math.max(h1, h2);
-                            for(let y=minH; y<maxH; y++) { // h=0~1 -> r=2, h=1~2 -> r=1, h=2~3 -> r=0
-                                if(2-y >=0 && 2-y < 3) projectionGrid[2-y][col] = 1;
-                            }
-                        }
-                        // 평면(Top) 보정
-                        if(viewMode === 'top') {
-                            let minX = Math.min(p1.ix, p2.ix), maxX = Math.max(p1.ix, p2.ix);
-                            for(let x=minX; x<maxX; x++) if(x>=0 && x<3) projectionGrid[p1.iz<3?p1.iz:2][x]=1; // 단순화
-                            let minZ = Math.min(p1.iz, p2.iz), maxZ = Math.max(p1.iz, p2.iz);
-                            for(let z=minZ; z<maxZ; z++) if(z>=0 && z<3) projectionGrid[z][p1.ix<3?p1.ix:2]=1;
-                        }
-                    };
-                    
-                    mark(c1); mark(c2);
-                };
+                const mark = (grid, r, c) => { if(r>=0 && r<3 && c>=0 && c<3) grid[r][c] = 1; };
 
                 lines.forEach(line => {
-                    // 각 투상면에 대해 선이 차지하는 보셀 영역을 러프하게 계산
-                    markVoxelsBetweenPoints(line.p1, line.p2, top, 'top');
-                    markVoxelsBetweenPoints(line.p1, line.p2, front, 'front');
-                    markVoxelsBetweenPoints(line.p1, line.p2, right, 'right');
-                });
+                    let p1 = line.p1, p2 = line.p2;
+                    
+                    // 평면도 (Top): X와 Z의 변화 마킹
+                    let minX = Math.min(p1.ix, p2.ix), maxX = Math.max(p1.ix, p2.ix);
+                    let minZ = Math.min(p1.iz, p2.iz), maxZ = Math.max(p1.iz, p2.iz);
+                    for(let x=minX; x<=maxX; x++) {
+                        for(let z=minZ; z<=maxZ; z++) {
+                            // 선이 실제로 지나가는 평면만 마킹하도록 단순화
+                            if (p1.ix===p2.ix && x===p1.ix) mark(top, z, x);
+                            if (p1.iz===p2.iz && z===p1.iz) mark(top, z, x);
+                            if (p1.iy!==p2.iy) mark(top, p1.iz, p1.ix); // 수직선인 경우
+                        }
+                    }
 
+                    // 정면도 (Front): X와 Y의 변화 마킹
+                    let minY = Math.min(p1.iy, p2.iy), maxY = Math.max(p1.iy, p2.iy);
+                    for(let x=minX; x<=maxX; x++) {
+                        for(let y=minY; y<=maxY; y++) {
+                            if (p1.ix===p2.ix && x===p1.ix) mark(front, 2-y, x);
+                            if (p1.iy===p2.iy && y===p1.iy) mark(front, 2-y, x);
+                            if (p1.iz!==p2.iz) mark(front, 2-p1.iy, p1.ix); // 깊이방향 선인 경우
+                        }
+                    }
+
+                    // 우측면도 (Right): Z와 Y의 변화 마킹 (오른쪽에서 보므로 X축 압축)
+                    for(let z=minZ; z<=maxZ; z++) {
+                        for(let y=minY; y<=maxY; y++) {
+                            if (p1.iz===p2.iz && z===p1.iz) mark(right, 2-y, 2-z);
+                            if (p1.iy===p2.iy && y===p1.iy) mark(right, 2-y, 2-z);
+                            if (p1.ix!==p2.ix) mark(right, 2-p1.iy, 2-p1.iz); // 가로방향 선인 경우
+                        }
+                    }
+                });
                 return { top, front, right };
             };
 
@@ -540,25 +495,20 @@
             return { evaluate };
         })();
 
-
-        // --- 초기화 및 이벤트 바인딩 ---
+        // --- Start ---
         function startNewProblem() {
             currentTarget = TargetGenerator.next();
             renderProblem(currentTarget);
-            DrawingEngine.clear(); // 캔버스 초기화
+            DrawingEngine.clear();
         }
 
         window.onload = () => {
-            // 이벤트 연결
             document.getElementById('btn-new').addEventListener('click', startNewProblem);
             document.getElementById('btn-undo').addEventListener('click', DrawingEngine.undo);
             document.getElementById('btn-clear').addEventListener('click', DrawingEngine.clear);
             document.getElementById('btn-evaluate').addEventListener('click', Evaluator.evaluate);
-
-            // 첫 문제 시작
             startNewProblem();
         };
-
     </script>
 </body>
 </html>
