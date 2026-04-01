@@ -102,7 +102,7 @@
             background-color: white;
             border: 1px solid #dfe4ea;
             cursor: crosshair;
-            touch-action: none; /* 모바일에서 드래그 시 화면 스크롤 방지 */
+            touch-action: none;
         }
 
         canvas { display: block; max-width: 100%; height: auto; }
@@ -143,6 +143,16 @@
         }
         .correct { color: var(--success-color); }
         .incorrect { color: var(--danger-color); }
+
+        .footer {
+            margin-top: 40px;
+            font-size: 14px;
+            color: #7f8c8d;
+            text-align: center;
+            width: 100%;
+            border-top: 1px solid #e0e0e0;
+            padding-top: 15px;
+        }
 
         @media (max-width: 768px) {
             .problem-panel { border-right: none; border-bottom: 1px solid #eee; padding-right: 0; padding-bottom: 25px; }
@@ -194,6 +204,10 @@
 
             <div id="result-message"></div>
         </div>
+
+        <div class="footer">
+            저작권자 (c) 2026 Junwon Yoon(윤준원)
+        </div>
     </div>
 
     <script>
@@ -201,19 +215,30 @@
 
         // --- 1. Target Data Generator ---
         const TargetGenerator = (() => {
+            // 난이도를 낮춘 단순 연결 형태 생성 로직
             const generateRawShape = () => {
-                let shape = [];
-                let hasBlock = false;
-                for (let z = 0; z < 3; z++) {
-                    let row = [];
-                    for (let x = 0; x < 3; x++) {
-                        let h = Math.random() > 0.4 ? Math.floor(Math.random() * 3) + 1 : 0;
-                        if (h > 0) hasBlock = true;
-                        row.push(h);
+                let shape = [[0,0,0],[0,0,0],[0,0,0]];
+                shape[1][1] = 1; // 무조건 중앙에서 시작
+                let coords = [[1,1]];
+                
+                // 블록을 2~3개만 더 추가하여 간단한 형태 보장
+                let iters = Math.floor(Math.random() * 2) + 2; 
+                for(let i=0; i<iters; i++) {
+                    let base = coords[Math.floor(Math.random() * coords.length)];
+                    let dirs = [[0,1], [1,0], [0,-1], [-1,0]];
+                    let dir = dirs[Math.floor(Math.random() * dirs.length)];
+                    let nz = base[0] + dir[0];
+                    let nx = base[1] + dir[1];
+                    if(nz >= 0 && nz < 3 && nx >= 0 && nx < 3) {
+                        shape[nz][nx] = 1;
+                        coords.push([nz, nx]);
                     }
-                    shape.push(row);
                 }
-                if (!hasBlock) shape[1][1] = 2; 
+                
+                // 일부 블록만 높이를 2로 만듦 (최대 높이 2)
+                coords.forEach(c => {
+                    if(Math.random() > 0.6) shape[c[0]][c[1]] = 2; 
+                });
                 return shape;
             };
 
@@ -295,7 +320,7 @@
             };
 
             const getSnappedPoint = (mx, my) => {
-                const threshold = 30; // 스냅 범위 조정
+                const threshold = 30; 
                 let minDist = Infinity;
                 let closest = null;
                 for (let p of points) {
@@ -309,7 +334,7 @@
             };
 
             initPoints();
-            return { drawDots, getSnappedPoint, ctx, canvas };
+            return { drawDots, getSnappedPoint, ctx, canvas, unitSize, cos30, sin30, startX, startY };
         })();
 
         // --- 3. Drawing Engine ---
@@ -319,14 +344,13 @@
             let isDragging = false;
             let startPoint = null;
             let currentMousePos = null;
+            let feedbackMissing = []; // 피드백용 누락 선 저장
 
             const init = () => {
-                // 마우스 이벤트
                 canvas.addEventListener('mousedown', onPointerDown);
                 window.addEventListener('mousemove', onPointerMove);
                 window.addEventListener('mouseup', onPointerUp);
                 
-                // 터치 이벤트 지원 (모바일/태블릿)
                 canvas.addEventListener('touchstart', (e) => { e.preventDefault(); onPointerDown(e.touches[0]); }, { passive: false });
                 window.addEventListener('touchmove', (e) => { if(isDragging) onPointerMove(e.touches[0]); }, { passive: false });
                 window.addEventListener('touchend', onPointerUp);
@@ -336,7 +360,23 @@
                 ctx.clearRect(0, 0, canvas.width, canvas.height);
                 IsoGrid.drawDots();
 
-                // 가이드 라인 그리기 (수정된 부분: currentMousePos.Pos.y -> currentMousePos.y)
+                // 누락된 선(피드백) 핑크색으로 그리기
+                if (feedbackMissing.length > 0) {
+                    ctx.lineWidth = 5;
+                    ctx.strokeStyle = '#ff1493'; // 핑크색 (DeepPink)
+                    ctx.lineCap = 'round';
+                    feedbackMissing.forEach(seg => {
+                        let sx1 = IsoGrid.startX + (seg.x1 - seg.z1) * IsoGrid.unitSize * IsoGrid.cos30;
+                        let sy1 = IsoGrid.startY + (seg.x1 + seg.z1) * IsoGrid.unitSize * IsoGrid.sin30 - (seg.y1 * IsoGrid.unitSize);
+                        let sx2 = IsoGrid.startX + (seg.x2 - seg.z2) * IsoGrid.unitSize * IsoGrid.cos30;
+                        let sy2 = IsoGrid.startY + (seg.x2 + seg.z2) * IsoGrid.unitSize * IsoGrid.sin30 - (seg.y2 * IsoGrid.unitSize);
+                        ctx.beginPath();
+                        ctx.moveTo(sx1, sy1);
+                        ctx.lineTo(sx2, sy2);
+                        ctx.stroke();
+                    });
+                }
+
                 if (isDragging && startPoint && currentMousePos) {
                     let endPoint = IsoGrid.getSnappedPoint(currentMousePos.x, currentMousePos.y);
                     ctx.beginPath();
@@ -349,7 +389,6 @@
                     ctx.setLineDash([]);
                 }
 
-                // 확정된 선들 그리기
                 ctx.lineWidth = 3;
                 ctx.strokeStyle = '#2c3e50';
                 ctx.lineCap = 'round';
@@ -363,7 +402,6 @@
 
             const getPointerPos = (e) => {
                 const rect = canvas.getBoundingClientRect();
-                // 캔버스 크기 비율에 따른 보정
                 const scaleX = canvas.width / rect.width;
                 const scaleY = canvas.height / rect.height;
                 return {
@@ -374,6 +412,11 @@
 
             const onPointerDown = (e) => {
                 document.getElementById('result-message').innerText = '';
+                // 다시 그리기 시작하면 피드백 선 지우기
+                if (feedbackMissing.length > 0) {
+                    clearFeedback();
+                }
+
                 const pos = getPointerPos(e);
                 const snapped = IsoGrid.getSnappedPoint(pos.x, pos.y);
                 if (snapped) {
@@ -394,7 +437,6 @@
                 if(currentMousePos) {
                     const snappedEnd = IsoGrid.getSnappedPoint(currentMousePos.x, currentMousePos.y);
                     if (snappedEnd && (startPoint.ix !== snappedEnd.ix || startPoint.iy !== snappedEnd.iy || startPoint.iz !== snappedEnd.iz)) {
-                        // 중복 선 방지
                         const exists = lines.some(l => 
                             (l.p1.x === startPoint.x && l.p1.y === startPoint.y && l.p2.x === snappedEnd.x && l.p2.y === snappedEnd.y) ||
                             (l.p2.x === startPoint.x && l.p2.y === startPoint.y && l.p1.x === snappedEnd.x && l.p1.y === snappedEnd.y)
@@ -407,15 +449,90 @@
                 redraw();
             };
 
-            const undo = () => { lines.pop(); redraw(); };
-            const clear = () => { lines = []; redraw(); };
+            const undo = () => { lines.pop(); clearFeedback(); redraw(); };
+            const clear = () => { lines = []; clearFeedback(); redraw(); };
+
+            const setFeedback = (missingSegments) => {
+                feedbackMissing = missingSegments.map(seg => {
+                    let parts = seg.split('-');
+                    let p1 = parts[0].split(',').map(Number);
+                    let p2 = parts[1].split(',').map(Number);
+                    return { x1: p1[0], y1: p1[1], z1: p1[2], x2: p2[0], y2: p2[1], z2: p2[2] };
+                });
+                redraw();
+            };
+
+            const clearFeedback = () => { feedbackMissing = []; redraw(); };
 
             init();
-            return { redraw, undo, clear, getLines: () => lines };
+            return { redraw, undo, clear, setFeedback, clearFeedback, getLines: () => lines };
         })();
 
-        // --- 4. Evaluator ---
+        // --- 4. Evaluator (정확한 선분 매칭 방식으로 변경) ---
         const Evaluator = (() => {
+            // 정답 와이어프레임(외곽선) 추출
+            const getCorrectLines = () => {
+                let correctLines = new Set();
+                const addEdge = (x1, y1, z1, x2, y2, z2) => {
+                    let pt1 = `${x1},${y1},${z1}`;
+                    let pt2 = `${x2},${y2},${z2}`;
+                    let key = pt1 < pt2 ? `${pt1}-${pt2}` : `${pt2}-${pt1}`;
+                    correctLines.add(key);
+                };
+
+                for (let z = 0; z < 3; z++) {
+                    for (let x = 0; x < 3; x++) {
+                        let h = currentTarget.shape[z][x];
+                        for (let y = 0; y < h; y++) {
+                            // 윗면 가시성
+                            if (y === h - 1) {
+                                addEdge(x, y+1, z, x+1, y+1, z);
+                                addEdge(x+1, y+1, z, x+1, y+1, z+1);
+                                addEdge(x+1, y+1, z+1, x, y+1, z+1);
+                                addEdge(x, y+1, z+1, x, y+1, z);
+                            }
+                            // 우측면(+x 방향) 가시성
+                            if (x === 2 || currentTarget.shape[z][x+1] <= y) {
+                                addEdge(x+1, y, z, x+1, y+1, z);
+                                addEdge(x+1, y+1, z, x+1, y+1, z+1);
+                                addEdge(x+1, y+1, z+1, x+1, y, z+1);
+                                addEdge(x+1, y, z+1, x+1, y, z);
+                            }
+                            // 좌측면(+z 방향) 가시성
+                            if (z === 2 || currentTarget.shape[z+1][x] <= y) {
+                                addEdge(x, y, z+1, x+1, y, z+1);
+                                addEdge(x+1, y, z+1, x+1, y+1, z+1);
+                                addEdge(x+1, y+1, z+1, x, y+1, z+1);
+                                addEdge(x, y+1, z+1, x, y, z+1);
+                            }
+                        }
+                    }
+                }
+                return correctLines;
+            };
+
+            // 사용자가 그린 선분을 1단위로 쪼개어 추출
+            const getUserSegments = (lines) => {
+                let segments = new Set();
+                lines.forEach(line => {
+                    let p1 = line.p1, p2 = line.p2;
+                    let dx = p2.ix - p1.ix, dy = p2.iy - p1.iy, dz = p2.iz - p1.iz;
+                    let steps = Math.max(Math.abs(dx), Math.abs(dy), Math.abs(dz));
+                    if (steps === 0) return;
+                    
+                    let sx = dx / steps, sy = dy / steps, sz = dz / steps;
+                    for(let i=0; i<steps; i++) {
+                        let xA = Math.round(p1.ix + sx * i), yA = Math.round(p1.iy + sy * i), zA = Math.round(p1.iz + sz * i);
+                        let xB = Math.round(p1.ix + sx * (i+1)), yB = Math.round(p1.iy + sy * (i+1)), zB = Math.round(p1.iz + sz * (i+1));
+                        
+                        let pt1 = `${xA},${yA},${zA}`, pt2 = `${xB},${yB},${zB}`;
+                        let key = pt1 < pt2 ? `${pt1}-${pt2}` : `${pt2}-${pt1}`;
+                        segments.add(key);
+                    }
+                });
+                return segments;
+            };
+
             const evaluate = () => {
                 if (!currentTarget) return;
                 const drawnLines = DrawingEngine.getLines();
@@ -424,66 +541,25 @@
                     return;
                 }
 
-                // 1. 선 기반 점유 공간 단순화 평가
-                const userProjections = calculateDrawnProjections(drawnLines);
-                const target = currentTarget.projections;
+                const correctSegments = getCorrectLines();
+                const userSegments = getUserSegments(drawnLines);
 
-                const isMatch = (arr1, arr2) => {
-                    for(let r=0; r<3; r++) for(let c=0; c<3; c++) if(arr1[r][c] !== arr2[r][c]) return false;
-                    return true;
-                };
+                const missingLines = Array.from(correctSegments).filter(x => !userSegments.has(x));
+                const extraLines = Array.from(userSegments).filter(x => !correctSegments.has(x));
 
-                const topOK = isMatch(target.top, userProjections.top);
-                const frontOK = isMatch(target.front, userProjections.front);
-                const rightOK = isMatch(target.right, userProjections.right);
-
-                if (topOK && frontOK && rightOK) {
-                    showMessage('🎉 정답입니다! 정투상도와 일치하는 입체를 그렸습니다.', 'correct');
+                if (missingLines.length === 0 && extraLines.length === 0) {
+                    DrawingEngine.clearFeedback();
+                    showMessage('🎉 정답입니다! 완벽한 등각투상도를 그렸습니다.', 'correct');
                 } else {
-                    showMessage('❌ 틀렸습니다. 정투상도를 다시 확인해 보세요.', 'incorrect');
-                }
-            };
-
-            const calculateDrawnProjections = (lines) => {
-                let top = [[0,0,0],[0,0,0],[0,0,0]], front = [[0,0,0],[0,0,0],[0,0,0]], right = [[0,0,0],[0,0,0],[0,0,0]];
-
-                const mark = (grid, r, c) => { if(r>=0 && r<3 && c>=0 && c<3) grid[r][c] = 1; };
-
-                lines.forEach(line => {
-                    let p1 = line.p1, p2 = line.p2;
+                    // 누락된 선이 있을 경우 화면에 그려주기
+                    DrawingEngine.setFeedback(missingLines);
                     
-                    // 평면도 (Top): X와 Z의 변화 마킹
-                    let minX = Math.min(p1.ix, p2.ix), maxX = Math.max(p1.ix, p2.ix);
-                    let minZ = Math.min(p1.iz, p2.iz), maxZ = Math.max(p1.iz, p2.iz);
-                    for(let x=minX; x<=maxX; x++) {
-                        for(let z=minZ; z<=maxZ; z++) {
-                            // 선이 실제로 지나가는 평면만 마킹하도록 단순화
-                            if (p1.ix===p2.ix && x===p1.ix) mark(top, z, x);
-                            if (p1.iz===p2.iz && z===p1.iz) mark(top, z, x);
-                            if (p1.iy!==p2.iy) mark(top, p1.iz, p1.ix); // 수직선인 경우
-                        }
+                    if (missingLines.length > 0) {
+                        showMessage(`❌ 틀렸습니다. 핑크색으로 표시된 누락된 선이 ${missingLines.length}개 있습니다.`, 'incorrect');
+                    } else {
+                        showMessage(`❌ 틀렸습니다. 불필요하게 그려진 숨은 선(오답)이 ${extraLines.length}개 있습니다.`, 'incorrect');
                     }
-
-                    // 정면도 (Front): X와 Y의 변화 마킹
-                    let minY = Math.min(p1.iy, p2.iy), maxY = Math.max(p1.iy, p2.iy);
-                    for(let x=minX; x<=maxX; x++) {
-                        for(let y=minY; y<=maxY; y++) {
-                            if (p1.ix===p2.ix && x===p1.ix) mark(front, 2-y, x);
-                            if (p1.iy===p2.iy && y===p1.iy) mark(front, 2-y, x);
-                            if (p1.iz!==p2.iz) mark(front, 2-p1.iy, p1.ix); // 깊이방향 선인 경우
-                        }
-                    }
-
-                    // 우측면도 (Right): Z와 Y의 변화 마킹 (오른쪽에서 보므로 X축 압축)
-                    for(let z=minZ; z<=maxZ; z++) {
-                        for(let y=minY; y<=maxY; y++) {
-                            if (p1.iz===p2.iz && z===p1.iz) mark(right, 2-y, 2-z);
-                            if (p1.iy===p2.iy && y===p1.iy) mark(right, 2-y, 2-z);
-                            if (p1.ix!==p2.ix) mark(right, 2-p1.iy, 2-p1.iz); // 가로방향 선인 경우
-                        }
-                    }
-                });
-                return { top, front, right };
+                }
             };
 
             const showMessage = (msg, type) => {
@@ -500,6 +576,7 @@
             currentTarget = TargetGenerator.next();
             renderProblem(currentTarget);
             DrawingEngine.clear();
+            document.getElementById('result-message').innerText = '';
         }
 
         window.onload = () => {
