@@ -164,7 +164,7 @@
     <h1>등각투상도 손 그리기 연습</h1>
     <p class="desc">
         왼쪽의 정투상도를 보고 오른쪽 캔버스에 입체 도형을 그리세요.<br>
-        <strong>캔버스의 점 근처에서 드래그하면 선이 자동으로 점에 맞춰집니다.</strong>
+        <strong>평평하게 이어진 면의 내부 구분선은 생략하고 외곽선만 그려도 정답으로 인정됩니다.</strong>
     </p>
 
     <div class="app-container">
@@ -215,13 +215,11 @@
 
         // --- 1. Target Data Generator ---
         const TargetGenerator = (() => {
-            // 난이도를 낮춘 단순 연결 형태 생성 로직
             const generateRawShape = () => {
                 let shape = [[0,0,0],[0,0,0],[0,0,0]];
-                shape[1][1] = 1; // 무조건 중앙에서 시작
+                shape[1][1] = 1; 
                 let coords = [[1,1]];
                 
-                // 블록을 2~3개만 더 추가하여 간단한 형태 보장
                 let iters = Math.floor(Math.random() * 2) + 2; 
                 for(let i=0; i<iters; i++) {
                     let base = coords[Math.floor(Math.random() * coords.length)];
@@ -235,7 +233,6 @@
                     }
                 }
                 
-                // 일부 블록만 높이를 2로 만듦 (최대 높이 2)
                 coords.forEach(c => {
                     if(Math.random() > 0.6) shape[c[0]][c[1]] = 2; 
                 });
@@ -344,7 +341,7 @@
             let isDragging = false;
             let startPoint = null;
             let currentMousePos = null;
-            let feedbackMissing = []; // 피드백용 누락 선 저장
+            let feedbackMissing = [];
 
             const init = () => {
                 canvas.addEventListener('mousedown', onPointerDown);
@@ -360,10 +357,9 @@
                 ctx.clearRect(0, 0, canvas.width, canvas.height);
                 IsoGrid.drawDots();
 
-                // 누락된 선(피드백) 핑크색으로 그리기
                 if (feedbackMissing.length > 0) {
                     ctx.lineWidth = 5;
-                    ctx.strokeStyle = '#ff1493'; // 핑크색 (DeepPink)
+                    ctx.strokeStyle = '#ff1493'; // 핑크색 피드백 선
                     ctx.lineCap = 'round';
                     feedbackMissing.forEach(seg => {
                         let sx1 = IsoGrid.startX + (seg.x1 - seg.z1) * IsoGrid.unitSize * IsoGrid.cos30;
@@ -412,10 +408,7 @@
 
             const onPointerDown = (e) => {
                 document.getElementById('result-message').innerText = '';
-                // 다시 그리기 시작하면 피드백 선 지우기
-                if (feedbackMissing.length > 0) {
-                    clearFeedback();
-                }
+                if (feedbackMissing.length > 0) clearFeedback();
 
                 const pos = getPointerPos(e);
                 const snapped = IsoGrid.getSnappedPoint(pos.x, pos.y);
@@ -468,50 +461,74 @@
             return { redraw, undo, clear, setFeedback, clearFeedback, getLines: () => lines };
         })();
 
-        // --- 4. Evaluator (정확한 선분 매칭 방식으로 변경) ---
+        // --- 4. Evaluator (평면 구분선 생략 허용) ---
         const Evaluator = (() => {
-            // 정답 와이어프레임(외곽선) 추출
-            const getCorrectLines = () => {
-                let correctLines = new Set();
-                const addEdge = (x1, y1, z1, x2, y2, z2) => {
+            const getEvaluatorData = () => {
+                let segmentFaces = {};
+                
+                const addSegFace = (x1, y1, z1, x2, y2, z2, faceId, planeType) => {
                     let pt1 = `${x1},${y1},${z1}`;
                     let pt2 = `${x2},${y2},${z2}`;
                     let key = pt1 < pt2 ? `${pt1}-${pt2}` : `${pt2}-${pt1}`;
-                    correctLines.add(key);
+                    if (!segmentFaces[key]) segmentFaces[key] = [];
+                    segmentFaces[key].push({ faceId, planeType });
+                };
+
+                const H = (x, z) => {
+                    if (x < 0 || x > 2 || z < 0 || z > 2) return 0;
+                    return currentTarget.shape[z][x];
                 };
 
                 for (let z = 0; z < 3; z++) {
                     for (let x = 0; x < 3; x++) {
-                        let h = currentTarget.shape[z][x];
+                        let h = H(x, z);
+                        if (h === 0) continue;
+
+                        // 윗면 (Top)
+                        let fTop = `T-${x}-${z}`;
+                        addSegFace(x, h, z, x+1, h, z, fTop, 'Y');
+                        addSegFace(x, h, z+1, x+1, h, z+1, fTop, 'Y');
+                        addSegFace(x, h, z, x, h, z+1, fTop, 'Y');
+                        addSegFace(x+1, h, z, x+1, h, z+1, fTop, 'Y');
+
                         for (let y = 0; y < h; y++) {
-                            // 윗면 가시성
-                            if (y === h - 1) {
-                                addEdge(x, y+1, z, x+1, y+1, z);
-                                addEdge(x+1, y+1, z, x+1, y+1, z+1);
-                                addEdge(x+1, y+1, z+1, x, y+1, z+1);
-                                addEdge(x, y+1, z+1, x, y+1, z);
+                            // 우측면 (Right)
+                            if (x === 2 || H(x+1, z) <= y) {
+                                let fRight = `R-${x}-${y}-${z}`;
+                                addSegFace(x+1, y, z, x+1, y, z+1, fRight, 'X');
+                                addSegFace(x+1, y+1, z, x+1, y+1, z+1, fRight, 'X');
+                                addSegFace(x+1, y, z, x+1, y+1, z, fRight, 'X');
+                                addSegFace(x+1, y, z+1, x+1, y+1, z+1, fRight, 'X');
                             }
-                            // 우측면(+x 방향) 가시성
-                            if (x === 2 || currentTarget.shape[z][x+1] <= y) {
-                                addEdge(x+1, y, z, x+1, y+1, z);
-                                addEdge(x+1, y+1, z, x+1, y+1, z+1);
-                                addEdge(x+1, y+1, z+1, x+1, y, z+1);
-                                addEdge(x+1, y, z+1, x+1, y, z);
-                            }
-                            // 좌측면(+z 방향) 가시성
-                            if (z === 2 || currentTarget.shape[z+1][x] <= y) {
-                                addEdge(x, y, z+1, x+1, y, z+1);
-                                addEdge(x+1, y, z+1, x+1, y+1, z+1);
-                                addEdge(x+1, y+1, z+1, x, y+1, z+1);
-                                addEdge(x, y+1, z+1, x, y, z+1);
+                            // 정면 (Front)
+                            if (z === 2 || H(x, z+1) <= y) {
+                                let fFront = `F-${x}-${y}-${z}`;
+                                addSegFace(x, y, z+1, x+1, y, z+1, fFront, 'Z');
+                                addSegFace(x, y+1, z+1, x+1, y+1, z+1, fFront, 'Z');
+                                addSegFace(x, y, z+1, x, y+1, z+1, fFront, 'Z');
+                                addSegFace(x+1, y, z+1, x+1, y+1, z+1, fFront, 'Z');
                             }
                         }
                     }
                 }
-                return correctLines;
+
+                let requiredLines = new Set();
+                let optionalLines = new Set();
+
+                for (let key in segmentFaces) {
+                    let faces = segmentFaces[key];
+                    // 같은 방향의 평면을 나누는 선이라면 생략 가능(옵션)으로 분류
+                    if (faces.length === 2 && faces[0].planeType === faces[1].planeType) {
+                        optionalLines.add(key);
+                    } else {
+                        // 그 외의 외곽선이나 면과 면이 만나는 모서리는 필수(필수)로 분류
+                        requiredLines.add(key);
+                    }
+                }
+
+                return { requiredLines, optionalLines };
             };
 
-            // 사용자가 그린 선분을 1단위로 쪼개어 추출
             const getUserSegments = (lines) => {
                 let segments = new Set();
                 lines.forEach(line => {
@@ -541,23 +558,635 @@
                     return;
                 }
 
-                const correctSegments = getCorrectLines();
+                const { requiredLines, optionalLines } = getEvaluatorData();
                 const userSegments = getUserSegments(drawnLines);
 
-                const missingLines = Array.from(correctSegments).filter(x => !userSegments.has(x));
-                const extraLines = Array.from(userSegments).filter(x => !correctSegments.has(x));
+                // 누락된 필수선 파악 (사용자가 안 그린 필수선)
+                const missingLines = Array.from(requiredLines).filter(x => !userSegments.has(x));
+                
+                // 오답으로 그어진 선 파악 (필수선도, 허용된 내부선도 아닌 선)
+                const extraLines = Array.from(userSegments).filter(x => !requiredLines.has(x) && !optionalLines.has(x));
 
                 if (missingLines.length === 0 && extraLines.length === 0) {
                     DrawingEngine.clearFeedback();
-                    showMessage('🎉 정답입니다! 완벽한 등각투상도를 그렸습니다.', 'correct');
+                    showMessage('🎉 정답입니다! 정확한 등각투상도를 그렸습니다.', 'correct');
                 } else {
-                    // 누락된 선이 있을 경우 화면에 그려주기
                     DrawingEngine.setFeedback(missingLines);
                     
                     if (missingLines.length > 0) {
                         showMessage(`❌ 틀렸습니다. 핑크색으로 표시된 누락된 선이 ${missingLines.length}개 있습니다.`, 'incorrect');
                     } else {
-                        showMessage(`❌ 틀렸습니다. 불필요하게 그려진 숨은 선(오답)이 ${extraLines.length}개 있습니다.`, 'incorrect');
+                        showMessage(`❌ 틀렸습니다. 불필요하게 그려진 엉뚱한 선(오답)이 ${extraLines.length}개 있습니다.`, 'incorrect');
+                    }
+                }
+            };
+
+            const showMessage = (msg, type) => {
+                const el = document.getElementById('result-message');
+                el.innerText = msg;
+                el.className = type;
+            };
+
+            return { evaluate };
+        })();
+
+        // --- Start ---
+        function startNewProblem() {
+            currentTarget = TargetGenerator.next();
+            renderProblem(currentTarget);
+            DrawingEngine.clear();
+            document.getElementById('result-message').innerText = '';
+        }
+
+        window.onload = () => {
+            document.getElementById('btn-new').addEventListener('click', startNewProblem);
+            document.getElementById('btn-undo').addEventListener('click', DrawingEngine.undo);
+            document.getElementById('btn-clear').addEventListener('click', DrawingEngine.clear);
+            document.getElementById('btn-evaluate').addEventListener('click', Evaluator.evaluate);
+            startNewProblem();
+        };
+    </script>
+</body>
+</html><!DOCTYPE html>
+<html lang="ko">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>정투상도 -> 등각투상도 손 그리기 연습</title>
+    <style>
+        :root {
+            --primary-color: #3498db;
+            --success-color: #2ecc71;
+            --danger-color: #e74c3c;
+            --bg-color: #f4f7f6;
+            --panel-bg: white;
+            --text-color: #333;
+        }
+
+        body {
+            font-family: 'Pretendard', -apple-system, BlinkMacSystemFont, system-ui, Roboto, sans-serif;
+            background-color: var(--bg-color);
+            color: var(--text-color);
+            margin: 0;
+            padding: 20px;
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+        }
+
+        h1 { font-size: 22px; margin-bottom: 5px; }
+        p.desc { color: #666; margin-bottom: 20px; text-align: center; font-size: 14px; line-height: 1.5; }
+
+        .app-container {
+            background: var(--panel-bg);
+            padding: 25px;
+            border-radius: 12px;
+            box-shadow: 0 8px 25px rgba(0,0,0,0.07);
+            display: flex;
+            flex-wrap: wrap;
+            gap: 25px;
+            max-width: 1000px;
+            width: 100%;
+        }
+
+        /* 왼쪽: 문제 영역 (정투상도) */
+        .problem-panel {
+            flex: 1 1 300px;
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            border-right: 1px solid #eee;
+            padding-right: 25px;
+        }
+
+        .section-title {
+            font-weight: bold;
+            font-size: 16px;
+            margin-bottom: 15px;
+            color: var(--primary-color);
+            width: 100%;
+            text-align: center;
+        }
+
+        .projections-container {
+            display: grid;
+            grid-template-columns: repeat(2, 120px);
+            gap: 20px;
+            justify-content: center;
+        }
+
+        .view-box { display: flex; flex-direction: column; align-items: center; }
+        .view-box h3 { font-size: 13px; margin: 0 0 8px 0; color: #555; }
+
+        /* 정투상도 그리드 스타일 */
+        .ortho-grid {
+            display: grid;
+            grid-template-columns: repeat(3, 30px);
+            grid-template-rows: repeat(3, 30px);
+            gap: 1px;
+            background-color: #ddd;
+            border: 2px solid #ddd;
+        }
+        .ortho-cell { width: 30px; height: 30px; background-color: white; }
+        .ortho-cell.filled { background-color: #34495e; }
+
+        .pos-top { grid-column: 1; grid-row: 1; }
+        .pos-front { grid-column: 1; grid-row: 2; }
+        .pos-right { grid-column: 2; grid-row: 2; }
+
+        /* 오른쪽: 그리기 영역 (등각투상 캔버스) */
+        .drawing-panel {
+            flex: 2 1 500px;
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            position: relative;
+        }
+
+        #canvas-container {
+            position: relative;
+            box-shadow: inset 0 0 10px rgba(0,0,0,0.05);
+            border-radius: 8px;
+            overflow: hidden;
+            background-color: white;
+            border: 1px solid #dfe4ea;
+            cursor: crosshair;
+            touch-action: none;
+        }
+
+        canvas { display: block; max-width: 100%; height: auto; }
+
+        .toolbar {
+            margin-top: 15px;
+            display: flex;
+            gap: 10px;
+            width: 100%;
+            justify-content: center;
+        }
+
+        button {
+            padding: 10px 20px;
+            font-size: 14px;
+            font-weight: bold;
+            border: none;
+            border-radius: 6px;
+            color: white;
+            cursor: pointer;
+            transition: background 0.2s, transform 0.1s;
+        }
+        button:active { transform: scale(0.97); }
+
+        .btn-action { background-color: #7f8c8d; }
+        .btn-action:hover { background-color: #95a5a6; }
+        
+        #btn-evaluate { background-color: var(--success-color); flex-grow: 1; }
+        #btn-evaluate:hover { background-color: #27ae60; }
+        #btn-new { background-color: var(--primary-color); }
+
+        #result-message {
+            margin-top: 15px;
+            font-size: 16px;
+            font-weight: bold;
+            min-height: 24px;
+            text-align: center;
+        }
+        .correct { color: var(--success-color); }
+        .incorrect { color: var(--danger-color); }
+
+        .footer {
+            margin-top: 40px;
+            font-size: 14px;
+            color: #7f8c8d;
+            text-align: center;
+            width: 100%;
+            border-top: 1px solid #e0e0e0;
+            padding-top: 15px;
+        }
+
+        @media (max-width: 768px) {
+            .problem-panel { border-right: none; border-bottom: 1px solid #eee; padding-right: 0; padding-bottom: 25px; }
+        }
+    </style>
+</head>
+<body>
+
+    <h1>등각투상도 손 그리기 연습</h1>
+    <p class="desc">
+        왼쪽의 정투상도를 보고 오른쪽 캔버스에 입체 도형을 그리세요.<br>
+        <strong>평평하게 이어진 면의 내부 구분선은 생략하고 외곽선만 그려도 정답으로 인정됩니다.</strong>
+    </p>
+
+    <div class="app-container">
+        
+        <div class="problem-panel">
+            <div class="section-title">1. 문제 (정투상도)</div>
+            <div class="projections-container">
+                <div class="view-box pos-top">
+                    <h3>평면도</h3>
+                    <div id="target-top" class="ortho-grid"></div>
+                </div>
+                <div class="view-box pos-front">
+                    <h3>정면도</h3>
+                    <div id="target-front" class="ortho-grid"></div>
+                </div>
+                <div class="view-box pos-right">
+                    <h3>우측면도</h3>
+                    <div id="target-right" class="ortho-grid"></div>
+                </div>
+            </div>
+            <div style="margin-top: 20px; width: 100%; display: flex; justify-content: center;">
+                <button id="btn-new" style="width: 100%; max-width: 260px;">새로운 문제 생성</button>
+            </div>
+        </div>
+
+        <div class="drawing-panel">
+            <div class="section-title">2. 그리기 영역 (등각 캔버스)</div>
+            <div id="canvas-container">
+                <canvas id="main-canvas" width="600" height="450"></canvas>
+            </div>
+            
+            <div class="toolbar">
+                <button id="btn-undo" class="btn-action">실행 취소</button>
+                <button id="btn-clear" class="btn-action">모두 지우기</button>
+                <button id="btn-evaluate">채점하기</button>
+            </div>
+
+            <div id="result-message"></div>
+        </div>
+
+        <div class="footer">
+            <p1>Copyright 2026 Junwon Yoon(윤준원)</p1>
+            <p1>본 웹페이지는 아파치 라이선스 버전 2.0에 의해 라이선스 됩니다.</p1>
+        </div>
+    </div>
+
+    <script>
+        let currentTarget = null;
+
+        // --- 1. Target Data Generator ---
+        const TargetGenerator = (() => {
+            const generateRawShape = () => {
+                let shape = [[0,0,0],[0,0,0],[0,0,0]];
+                shape[1][1] = 1; 
+                let coords = [[1,1]];
+                
+                let iters = Math.floor(Math.random() * 2) + 2; 
+                for(let i=0; i<iters; i++) {
+                    let base = coords[Math.floor(Math.random() * coords.length)];
+                    let dirs = [[0,1], [1,0], [0,-1], [-1,0]];
+                    let dir = dirs[Math.floor(Math.random() * dirs.length)];
+                    let nz = base[0] + dir[0];
+                    let nx = base[1] + dir[1];
+                    if(nz >= 0 && nz < 3 && nx >= 0 && nx < 3) {
+                        shape[nz][nx] = 1;
+                        coords.push([nz, nx]);
+                    }
+                }
+                
+                coords.forEach(c => {
+                    if(Math.random() > 0.6) shape[c[0]][c[1]] = 2; 
+                });
+                return shape;
+            };
+
+            const calculateProjections = (shape) => {
+                let top = [[0,0,0],[0,0,0],[0,0,0]], 
+                    front = [[0,0,0],[0,0,0],[0,0,0]], 
+                    right = [[0,0,0],[0,0,0],[0,0,0]];
+
+                for(let z=0; z<3; z++) {
+                    for(let x=0; x<3; x++) {
+                        let h = shape[z][x];
+                        if (h > 0) top[z][x] = 1;
+                        for(let y=0; y<h; y++) front[2-y][x] = 1;
+                        for(let y=0; y<h; y++) right[2-y][2-z] = 1;
+                    }
+                }
+                return { top, front, right };
+            };
+
+            return {
+                next: () => {
+                    const shape = generateRawShape();
+                    const projections = calculateProjections(shape);
+                    return { shape, projections };
+                }
+            };
+        })();
+
+        function renderProblem(target) {
+            const drawGrid = (id, data) => {
+                const container = document.getElementById(id);
+                container.innerHTML = '';
+                for(let r=0; r<3; r++) {
+                    for(let c=0; c<3; c++) {
+                        const cell = document.createElement('div');
+                        cell.className = 'ortho-cell';
+                        if (data[r][c]) cell.classList.add('filled');
+                        container.appendChild(cell);
+                    }
+                }
+            };
+            drawGrid('target-top', target.projections.top);
+            drawGrid('target-front', target.projections.front);
+            drawGrid('target-right', target.projections.right);
+        }
+
+        // --- 2. Iso Grid System ---
+        const IsoGrid = (() => {
+            const canvas = document.getElementById('main-canvas');
+            const ctx = canvas.getContext('2d');
+            const unitSize = 50; 
+            const cos30 = Math.sqrt(3) / 2;
+            const sin30 = 0.5;
+            const startX = canvas.width / 2;
+            const startY = 150; 
+
+            let points = [];
+
+            const initPoints = () => {
+                points = [];
+                for (let iy = 0; iy <= 3; iy++) {
+                    for (let iz = 0; iz <= 3; iz++) {
+                        for (let ix = 0; ix <= 3; ix++) {
+                            let sx = startX + (ix - iz) * unitSize * cos30;
+                            let sy = startY + (ix + iz) * unitSize * sin30 - (iy * unitSize);
+                            points.push({ x: sx, y: sy, ix, iy, iz });
+                        }
+                    }
+                }
+            };
+
+            const drawDots = () => {
+                ctx.fillStyle = '#cbd5e1';
+                points.forEach(p => {
+                    ctx.beginPath();
+                    ctx.arc(p.x, p.y, 2.5, 0, Math.PI * 2);
+                    ctx.fill();
+                });
+            };
+
+            const getSnappedPoint = (mx, my) => {
+                const threshold = 30; 
+                let minDist = Infinity;
+                let closest = null;
+                for (let p of points) {
+                    let d = Math.sqrt((mx - p.x)**2 + (my - p.y)**2);
+                    if (d < threshold && d < minDist) {
+                        minDist = d;
+                        closest = p;
+                    }
+                }
+                return closest;
+            };
+
+            initPoints();
+            return { drawDots, getSnappedPoint, ctx, canvas, unitSize, cos30, sin30, startX, startY };
+        })();
+
+        // --- 3. Drawing Engine ---
+        const DrawingEngine = (() => {
+            const { canvas, ctx } = IsoGrid;
+            let lines = [];
+            let isDragging = false;
+            let startPoint = null;
+            let currentMousePos = null;
+            let feedbackMissing = [];
+
+            const init = () => {
+                canvas.addEventListener('mousedown', onPointerDown);
+                window.addEventListener('mousemove', onPointerMove);
+                window.addEventListener('mouseup', onPointerUp);
+                
+                canvas.addEventListener('touchstart', (e) => { e.preventDefault(); onPointerDown(e.touches[0]); }, { passive: false });
+                window.addEventListener('touchmove', (e) => { if(isDragging) onPointerMove(e.touches[0]); }, { passive: false });
+                window.addEventListener('touchend', onPointerUp);
+            };
+
+            const redraw = () => {
+                ctx.clearRect(0, 0, canvas.width, canvas.height);
+                IsoGrid.drawDots();
+
+                if (feedbackMissing.length > 0) {
+                    ctx.lineWidth = 5;
+                    ctx.strokeStyle = '#ff1493'; // 핑크색 피드백 선
+                    ctx.lineCap = 'round';
+                    feedbackMissing.forEach(seg => {
+                        let sx1 = IsoGrid.startX + (seg.x1 - seg.z1) * IsoGrid.unitSize * IsoGrid.cos30;
+                        let sy1 = IsoGrid.startY + (seg.x1 + seg.z1) * IsoGrid.unitSize * IsoGrid.sin30 - (seg.y1 * IsoGrid.unitSize);
+                        let sx2 = IsoGrid.startX + (seg.x2 - seg.z2) * IsoGrid.unitSize * IsoGrid.cos30;
+                        let sy2 = IsoGrid.startY + (seg.x2 + seg.z2) * IsoGrid.unitSize * IsoGrid.sin30 - (seg.y2 * IsoGrid.unitSize);
+                        ctx.beginPath();
+                        ctx.moveTo(sx1, sy1);
+                        ctx.lineTo(sx2, sy2);
+                        ctx.stroke();
+                    });
+                }
+
+                if (isDragging && startPoint && currentMousePos) {
+                    let endPoint = IsoGrid.getSnappedPoint(currentMousePos.x, currentMousePos.y);
+                    ctx.beginPath();
+                    ctx.lineWidth = 2;
+                    ctx.setLineDash([5, 5]);
+                    ctx.strokeStyle = '#94a3b8';
+                    ctx.moveTo(startPoint.x, startPoint.y);
+                    ctx.lineTo(endPoint ? endPoint.x : currentMousePos.x, endPoint ? endPoint.y : currentMousePos.y);
+                    ctx.stroke();
+                    ctx.setLineDash([]);
+                }
+
+                ctx.lineWidth = 3;
+                ctx.strokeStyle = '#2c3e50';
+                ctx.lineCap = 'round';
+                lines.forEach(line => {
+                    ctx.beginPath();
+                    ctx.moveTo(line.p1.x, line.p1.y);
+                    ctx.lineTo(line.p2.x, line.p2.y);
+                    ctx.stroke();
+                });
+            };
+
+            const getPointerPos = (e) => {
+                const rect = canvas.getBoundingClientRect();
+                const scaleX = canvas.width / rect.width;
+                const scaleY = canvas.height / rect.height;
+                return {
+                    x: (e.clientX - rect.left) * scaleX,
+                    y: (e.clientY - rect.top) * scaleY
+                };
+            };
+
+            const onPointerDown = (e) => {
+                document.getElementById('result-message').innerText = '';
+                if (feedbackMissing.length > 0) clearFeedback();
+
+                const pos = getPointerPos(e);
+                const snapped = IsoGrid.getSnappedPoint(pos.x, pos.y);
+                if (snapped) {
+                    isDragging = true;
+                    startPoint = snapped;
+                    currentMousePos = pos;
+                }
+            };
+
+            const onPointerMove = (e) => {
+                if (!isDragging) return;
+                currentMousePos = getPointerPos(e);
+                redraw();
+            };
+
+            const onPointerUp = (e) => {
+                if (!isDragging) return;
+                if(currentMousePos) {
+                    const snappedEnd = IsoGrid.getSnappedPoint(currentMousePos.x, currentMousePos.y);
+                    if (snappedEnd && (startPoint.ix !== snappedEnd.ix || startPoint.iy !== snappedEnd.iy || startPoint.iz !== snappedEnd.iz)) {
+                        const exists = lines.some(l => 
+                            (l.p1.x === startPoint.x && l.p1.y === startPoint.y && l.p2.x === snappedEnd.x && l.p2.y === snappedEnd.y) ||
+                            (l.p2.x === startPoint.x && l.p2.y === startPoint.y && l.p1.x === snappedEnd.x && l.p1.y === snappedEnd.y)
+                        );
+                        if(!exists) lines.push({ p1: startPoint, p2: snappedEnd });
+                    }
+                }
+                isDragging = false;
+                startPoint = null;
+                redraw();
+            };
+
+            const undo = () => { lines.pop(); clearFeedback(); redraw(); };
+            const clear = () => { lines = []; clearFeedback(); redraw(); };
+
+            const setFeedback = (missingSegments) => {
+                feedbackMissing = missingSegments.map(seg => {
+                    let parts = seg.split('-');
+                    let p1 = parts[0].split(',').map(Number);
+                    let p2 = parts[1].split(',').map(Number);
+                    return { x1: p1[0], y1: p1[1], z1: p1[2], x2: p2[0], y2: p2[1], z2: p2[2] };
+                });
+                redraw();
+            };
+
+            const clearFeedback = () => { feedbackMissing = []; redraw(); };
+
+            init();
+            return { redraw, undo, clear, setFeedback, clearFeedback, getLines: () => lines };
+        })();
+
+        // --- 4. Evaluator (평면 구분선 생략 허용) ---
+        const Evaluator = (() => {
+            const getEvaluatorData = () => {
+                let segmentFaces = {};
+                
+                const addSegFace = (x1, y1, z1, x2, y2, z2, faceId, planeType) => {
+                    let pt1 = `${x1},${y1},${z1}`;
+                    let pt2 = `${x2},${y2},${z2}`;
+                    let key = pt1 < pt2 ? `${pt1}-${pt2}` : `${pt2}-${pt1}`;
+                    if (!segmentFaces[key]) segmentFaces[key] = [];
+                    segmentFaces[key].push({ faceId, planeType });
+                };
+
+                const H = (x, z) => {
+                    if (x < 0 || x > 2 || z < 0 || z > 2) return 0;
+                    return currentTarget.shape[z][x];
+                };
+
+                for (let z = 0; z < 3; z++) {
+                    for (let x = 0; x < 3; x++) {
+                        let h = H(x, z);
+                        if (h === 0) continue;
+
+                        // 윗면 (Top)
+                        let fTop = `T-${x}-${z}`;
+                        addSegFace(x, h, z, x+1, h, z, fTop, 'Y');
+                        addSegFace(x, h, z+1, x+1, h, z+1, fTop, 'Y');
+                        addSegFace(x, h, z, x, h, z+1, fTop, 'Y');
+                        addSegFace(x+1, h, z, x+1, h, z+1, fTop, 'Y');
+
+                        for (let y = 0; y < h; y++) {
+                            // 우측면 (Right)
+                            if (x === 2 || H(x+1, z) <= y) {
+                                let fRight = `R-${x}-${y}-${z}`;
+                                addSegFace(x+1, y, z, x+1, y, z+1, fRight, 'X');
+                                addSegFace(x+1, y+1, z, x+1, y+1, z+1, fRight, 'X');
+                                addSegFace(x+1, y, z, x+1, y+1, z, fRight, 'X');
+                                addSegFace(x+1, y, z+1, x+1, y+1, z+1, fRight, 'X');
+                            }
+                            // 정면 (Front)
+                            if (z === 2 || H(x, z+1) <= y) {
+                                let fFront = `F-${x}-${y}-${z}`;
+                                addSegFace(x, y, z+1, x+1, y, z+1, fFront, 'Z');
+                                addSegFace(x, y+1, z+1, x+1, y+1, z+1, fFront, 'Z');
+                                addSegFace(x, y, z+1, x, y+1, z+1, fFront, 'Z');
+                                addSegFace(x+1, y, z+1, x+1, y+1, z+1, fFront, 'Z');
+                            }
+                        }
+                    }
+                }
+
+                let requiredLines = new Set();
+                let optionalLines = new Set();
+
+                for (let key in segmentFaces) {
+                    let faces = segmentFaces[key];
+                    // 같은 방향의 평면을 나누는 선이라면 생략 가능(옵션)으로 분류
+                    if (faces.length === 2 && faces[0].planeType === faces[1].planeType) {
+                        optionalLines.add(key);
+                    } else {
+                        // 그 외의 외곽선이나 면과 면이 만나는 모서리는 필수(필수)로 분류
+                        requiredLines.add(key);
+                    }
+                }
+
+                return { requiredLines, optionalLines };
+            };
+
+            const getUserSegments = (lines) => {
+                let segments = new Set();
+                lines.forEach(line => {
+                    let p1 = line.p1, p2 = line.p2;
+                    let dx = p2.ix - p1.ix, dy = p2.iy - p1.iy, dz = p2.iz - p1.iz;
+                    let steps = Math.max(Math.abs(dx), Math.abs(dy), Math.abs(dz));
+                    if (steps === 0) return;
+                    
+                    let sx = dx / steps, sy = dy / steps, sz = dz / steps;
+                    for(let i=0; i<steps; i++) {
+                        let xA = Math.round(p1.ix + sx * i), yA = Math.round(p1.iy + sy * i), zA = Math.round(p1.iz + sz * i);
+                        let xB = Math.round(p1.ix + sx * (i+1)), yB = Math.round(p1.iy + sy * (i+1)), zB = Math.round(p1.iz + sz * (i+1));
+                        
+                        let pt1 = `${xA},${yA},${zA}`, pt2 = `${xB},${yB},${zB}`;
+                        let key = pt1 < pt2 ? `${pt1}-${pt2}` : `${pt2}-${pt1}`;
+                        segments.add(key);
+                    }
+                });
+                return segments;
+            };
+
+            const evaluate = () => {
+                if (!currentTarget) return;
+                const drawnLines = DrawingEngine.getLines();
+                if (drawnLines.length < 3) {
+                    showMessage('❌ 선을 더 그려서 입체를 완성하세요.', 'incorrect');
+                    return;
+                }
+
+                const { requiredLines, optionalLines } = getEvaluatorData();
+                const userSegments = getUserSegments(drawnLines);
+
+                // 누락된 필수선 파악 (사용자가 안 그린 필수선)
+                const missingLines = Array.from(requiredLines).filter(x => !userSegments.has(x));
+                
+                // 오답으로 그어진 선 파악 (필수선도, 허용된 내부선도 아닌 선)
+                const extraLines = Array.from(userSegments).filter(x => !requiredLines.has(x) && !optionalLines.has(x));
+
+                if (missingLines.length === 0 && extraLines.length === 0) {
+                    DrawingEngine.clearFeedback();
+                    showMessage('🎉 정답입니다! 정확한 등각투상도를 그렸습니다.', 'correct');
+                } else {
+                    DrawingEngine.setFeedback(missingLines);
+                    
+                    if (missingLines.length > 0) {
+                        showMessage(`❌ 틀렸습니다. 핑크색으로 표시된 누락된 선이 ${missingLines.length}개 있습니다.`, 'incorrect');
+                    } else {
+                        showMessage(`❌ 틀렸습니다. 불필요하게 그려진 엉뚱한 선(오답)이 ${extraLines.length}개 있습니다.`, 'incorrect');
                     }
                 }
             };
