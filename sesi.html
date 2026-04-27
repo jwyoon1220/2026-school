@@ -61,7 +61,6 @@
       width: 100%; 
     }
     
-    /* Beautiful Content Cards */
     .info-box {
       background: #ffffff;
       border: 1px solid #f0f0f0;
@@ -70,6 +69,22 @@
       margin-bottom: 25px;
       text-align: left;
       box-shadow: 0 4px 24px rgba(0, 0, 0, 0.03); /* Extremely soft shadow */
+      display: flex;
+      gap: 25px;
+      align-items: center;
+    }
+    
+    .info-box img {
+      width: 140px;
+      height: 140px;
+      object-fit: cover;
+      border-radius: 12px;
+      box-shadow: 0 2px 10px rgba(0,0,0,0.1);
+      flex-shrink: 0;
+    }
+    
+    .info-box .text-content {
+      flex: 1;
     }
     
     .info-box h3 { 
@@ -126,12 +141,18 @@
         <h2>기초 교육과 생존 지원</h2>
         <div class="slide-content">
           <div class="info-box">
-            <h3>세인트 주드 학교 (탄자니아)</h3>
-            <p>가난한 학생들에게 완전 무료 교육, 급식, 기숙사를 제공합니다. "교육으로 빈곤을 없애자"는 목표로 경제 불평등을 근본적으로 해결하려 노력합니다.</p>
+            <img src="https://upload.wikimedia.org/wikipedia/commons/thumb/0/09/St_Jude_School_June09_02.jpg/500px-St_Jude_School_June09_02.jpg" alt="St Jude School">
+            <div class="text-content">
+              <h3>세인트 주드 학교 (탄자니아)</h3>
+              <p>가난한 학생들에게 완전 무료 교육, 급식, 기숙사를 제공합니다. "교육으로 빈곤을 없애자"는 목표로 경제 불평등을 근본적으로 해결하려 노력합니다.</p>
+            </div>
           </div>
           <div class="info-box">
-            <h3>프라탐 (인도)</h3>
-            <p>빈민가 아이들에게 기초 읽기와 수학 교육을 제공합니다. 집이나 사원 등 공간의 제약 없이 수업을 진행하여 학습 격차를 직접적으로 줄입니다.</p>
+            <img src="https://upload.wikimedia.org/wikipedia/commons/thumb/b/b1/Pratham_math_class.jpg/960px-Pratham_math_class.jpg" alt="Pratham">
+            <div class="text-content">
+              <h3>프라탐 (인도)</h3>
+              <p>빈민가 아이들에게 기초 읽기와 수학 교육을 제공합니다. 집이나 사원 등 공간의 제약 없이 수업을 진행하여 학습 격차를 직접적으로 줄입니다.</p>
+            </div>
           </div>
         </div>
       </section>
@@ -141,12 +162,18 @@
         <h2>기회의 확대</h2>
         <div class="slide-content">
           <div class="info-box">
-            <h3>더 브릴리언트 클럽 (영국)</h3>
-            <p>영국 학교들과 협력하여 저소득층 학생들에게 대학 수준의 수업 경험을 제공합니다. "부자만 좋은 대학에 간다"는 구조적 한계를 깨기 위한 시도입니다.</p>
+            <img src="https://images.unsplash.com/photo-1523240795612-9a054b0db644?auto=format&fit=crop&w=500&q=80" alt="The Brilliant Club">
+            <div class="text-content">
+              <h3>더 브릴리언트 클럽 (영국)</h3>
+              <p>영국 학교들과 협력하여 저소득층 학생들에게 대학 수준의 수업 경험을 제공합니다. "부자만 좋은 대학에 간다"는 구조적 한계를 깨기 위한 시도입니다.</p>
+            </div>
           </div>
           <div class="info-box">
-            <h3>래그드 스쿨 (19세기 영국)</h3>
-            <p>가장 가난한 극빈층 아이들을 위한 무료 학교로, 교육뿐만 아니라 음식과 옷(생존 지원)을 동시에 제공했던 역사적인 협력 사례입니다.</p>
+            <img src="https://images.unsplash.com/photo-1580582932707-520aed937b7b?auto=format&fit=crop&w=500&q=80" alt="Ragged School">
+            <div class="text-content">
+              <h3>래그드 스쿨 (19세기 영국)</h3>
+              <p>가장 가난한 극빈층 아이들을 위한 무료 학교로, 교육뿐만 아니라 음식과 옷(생존 지원)을 동시에 제공했던 역사적인 협력 사례입니다.</p>
+            </div>
           </div>
         </div>
       </section>
@@ -155,9 +182,12 @@
       <section>
         <h2>전 세계적 연대</h2>
         <div class="slide-content">
-          <div class="info-box" style="padding: 50px 40px;">
-            <h3>구세군 (The Salvation Army)</h3>
-            <p style="font-size: 0.85em; margin-top: 15px; line-height: 1.7;">전 세계 2,000개 이상의 학교를 직접 운영하며, 장애 학생과 저소득층 학생들을 위한 교육을 지원합니다. 교육과 복지 서비스를 동시에 제공하여 튼튼한 사회적 안전망을 구축합니다.</p>
+          <div class="info-box" style="padding: 40px;">
+            <img src="https://images.unsplash.com/photo-1593113565694-c708fa0d4566?auto=format&fit=crop&w=500&q=80" alt="The Salvation Army" style="width: 200px; height: 200px;">
+            <div class="text-content">
+              <h3>구세군 (The Salvation Army)</h3>
+              <p style="font-size: 0.85em; margin-top: 15px; line-height: 1.7;">전 세계 2,000개 이상의 학교를 직접 운영하며, 장애 학생과 저소득층 학생들을 위한 교육을 지원합니다. 교육과 복지 서비스를 동시에 제공하여 튼튼한 사회적 안전망을 구축합니다.</p>
+            </div>
           </div>
         </div>
       </section>
@@ -165,8 +195,9 @@
       <!-- Slide 6: UNESCO School & Neungdong -->
       <section>
         <h2>유네스코 학교와 세계 시민</h2>
-        <div class="slide-content">
-          <ul class="ppt-list">
+        <div class="slide-content" style="display: flex; gap: 30px; align-items: center;">
+          <img src="https://images.unsplash.com/photo-1529390079861-591de354faf5?auto=format&fit=crop&w=600&q=80" alt="Global Education" style="width: 40%; border-radius: 16px; box-shadow: 0 4px 20px rgba(0,0,0,0.08); margin: 0;">
+          <ul class="ppt-list" style="flex: 1; margin-left: 10px;">
             <li><strong>유네스코 학교 (UNESCO ASPnet)</strong>
               <ul>
                 <li>평화, 인권, 다문화 이해, 지속가능발전 등 유네스코의 이념을 앞장서서 실천하는 학교입니다.</li>
