@@ -8,49 +8,92 @@
   <!-- Reveal.js CSS -->
   <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/reveal.js/4.3.1/reset.min.css">
   <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/reveal.js/4.3.1/reveal.min.css">
-  <!-- Use 'simple' theme for a clean, professional PPT look -->
-  <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/reveal.js/4.3.1/theme/simple.min.css" id="theme">
+  <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/reveal.js/4.3.1/theme/white.min.css" id="theme">
   
-  <link rel="preconnect" href="https://fonts.googleapis.com">
-  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-  <link href="https://fonts.googleapis.com/css2?family=Noto+Sans+KR:wght@400;700&display=swap" rel="stylesheet">
+  <!-- Pretendard Font (Modern, beautiful Korean font) -->
+  <link rel="stylesheet" as="style" crossorigin href="https://cdn.jsdelivr.net/gh/orioncactus/pretendard@v1.3.8/dist/web/static/pretendard.css" />
   
   <style>
-    /* Clean PPT Style Overrides */
-    .reveal { font-family: 'Noto Sans KR', sans-serif; }
+    /* Elegant, Minimalist "Apple Keynote" Style Overrides */
+    
+    .reveal {
+      font-family: 'Pretendard', -apple-system, BlinkMacSystemFont, system-ui, Roboto, 'Helvetica Neue', 'Segoe UI', 'Apple SD Gothic Neo', 'Noto Sans KR', 'Malgun Gothic', sans-serif;
+      background-color: #fbfbfd; /* Beautiful off-white */
+      color: #1d1d1f;
+      font-size: 32px; /* Reduced base font size significantly */
+    }
+    
     .reveal h1, .reveal h2, .reveal h3, .reveal h4, .reveal h5, .reveal h6 {
-      font-family: 'Noto Sans KR', sans-serif;
+      font-family: inherit;
       text-transform: none;
-      font-weight: 700;
-      color: #222;
+      font-weight: 600;
+      color: #1d1d1f;
+      letter-spacing: -0.03em;
     }
-    .reveal h1 { font-size: 2.2em; }
-    .reveal h2 { 
-      font-size: 1.5em; 
-      margin-bottom: 40px; 
-      border-bottom: 3px solid #0056b3; 
-      padding-bottom: 10px; 
-      display: inline-block;
-    }
-    .reveal p, .reveal li { font-size: 0.95em; line-height: 1.6; color: #333; }
     
-    .slide-content { text-align: left; width: 90%; margin: 0 auto; }
-    
-    .info-box {
-      background: #f8f9fa;
-      border: 1px solid #e9ecef;
-      border-radius: 4px;
-      padding: 20px 30px;
+    /* Title Slide Header */
+    .reveal h1 { 
+      font-size: 1.8em; 
       margin-bottom: 20px;
-      text-align: left;
+      line-height: 1.3;
     }
-    .info-box h3 { font-size: 1.1em; margin-top: 0; color: #0056b3; margin-bottom: 10px; }
-    .info-box p { font-size: 0.85em; margin-bottom: 0; color: #555; }
     
+    /* Standard Slide Header */
+    .reveal h2 { 
+      font-size: 1.1em; 
+      margin-bottom: 50px; 
+      font-weight: 500;
+      color: #86868b; /* Soft gray for elegance */
+      text-align: left;
+      border: none;
+      padding-left: 0;
+    }
+    
+    .reveal p, .reveal li { 
+      font-size: 0.85em; 
+      font-weight: 400;
+      line-height: 1.6; 
+      color: #424245; 
+    }
+    
+    .slide-content { 
+      text-align: left; 
+      width: 100%; 
+    }
+    
+    /* Beautiful Content Cards */
+    .info-box {
+      background: #ffffff;
+      border: 1px solid #f0f0f0;
+      border-radius: 16px;
+      padding: 30px 40px;
+      margin-bottom: 25px;
+      text-align: left;
+      box-shadow: 0 4px 24px rgba(0, 0, 0, 0.03); /* Extremely soft shadow */
+    }
+    
+    .info-box h3 { 
+      font-size: 0.95em; 
+      margin-top: 0; 
+      color: #1d1d1f; 
+      margin-bottom: 12px; 
+      font-weight: 600;
+    }
+    
+    .info-box p { 
+      font-size: 0.75em; 
+      margin-bottom: 0; 
+      color: #6e6e73; 
+    }
+    
+    /* Clean Bullet Points */
     ul.ppt-list { text-align: left; margin-left: 20px; }
-    ul.ppt-list > li { margin-bottom: 20px; }
-    ul.ppt-list ul { margin-top: 10px; }
-    ul.ppt-list ul > li { margin-bottom: 8px; color: #555; font-size: 0.9em; }
+    ul.ppt-list > li { margin-bottom: 18px; }
+    ul.ppt-list ul { margin-top: 10px; margin-bottom: 15px; }
+    ul.ppt-list ul > li { margin-bottom: 8px; color: #6e6e73; font-size: 0.9em; }
+    
+    .accent-text { color: #0066cc; font-weight: 500; }
+    .subtitle-text { font-size: 0.8em !important; color: #86868b !important; font-weight: 400 !important; margin-bottom: 15px !important; }
   </style>
 </head>
 <body>
@@ -59,11 +102,11 @@
       
       <!-- Slide 1: Title -->
       <section>
-        <br><br>
-        <h3 style="color: #666; font-weight: 400; font-size: 1.1em;">학교에서 시작하는 세계 시민 교육</h3>
-        <h1 style="color: #0056b3; margin-top: 20px;">지구촌 협력과 우리의 역할</h1>
-        <br><br><br>
-        <p style="font-size: 0.8em; color: #888;">능동고등학교</p>
+        <div style="text-align: center; margin-top: 10%;">
+          <p class="subtitle-text">학교에서 시작하는 세계 시민 교육</p>
+          <h1>지구촌 협력과<br>우리의 역할</h1>
+          <p style="font-size: 0.65em; color: #a1a1a6; margin-top: 60px;">능동고등학교</p>
+        </div>
       </section>
 
       <!-- Slide 2: Intro -->
@@ -72,7 +115,7 @@
         <div class="slide-content">
           <ul class="ppt-list">
             <li>전 세계적으로 경제적 불평등은 매우 심각한 문제로 대두되고 있습니다.</li>
-            <li>많은 국제 단체와 학교들이 <strong>'교육'</strong>을 통해 이 불평등의 고리를 끊어내려 노력하고 있습니다.</li>
+            <li>많은 국제 단체와 학교들이 <span class="accent-text">'교육'</span>을 통해 이 불평등의 고리를 끊어내려 노력하고 있습니다.</li>
             <li>실제 세계 곳곳에서 학교를 기반으로 이루어지고 있는 지구촌 협력 사례들을 살펴보고자 합니다.</li>
           </ul>
         </div>
@@ -112,9 +155,9 @@
       <section>
         <h2>전 세계적 연대</h2>
         <div class="slide-content">
-          <div class="info-box">
+          <div class="info-box" style="padding: 50px 40px;">
             <h3>구세군 (The Salvation Army)</h3>
-            <p>전 세계 2,000개 이상의 학교를 직접 운영하며, 장애 학생과 저소득층 학생들을 위한 교육을 지원합니다. 교육과 복지 서비스를 동시에 제공하여 튼튼한 사회적 안전망을 구축합니다.</p>
+            <p style="font-size: 0.85em; margin-top: 15px; line-height: 1.7;">전 세계 2,000개 이상의 학교를 직접 운영하며, 장애 학생과 저소득층 학생들을 위한 교육을 지원합니다. 교육과 복지 서비스를 동시에 제공하여 튼튼한 사회적 안전망을 구축합니다.</p>
           </div>
         </div>
       </section>
@@ -145,13 +188,13 @@
         <div class="slide-content">
           <ul class="ppt-list">
             <li><strong>차별 없는 시선</strong>
-              <p style="font-size: 0.9em; color: #555; margin-top: 5px;">경제적, 문화적 차이와 상관없이 모든 친구들을 동등하게 존중하기</p>
+              <p style="font-size: 0.8em; color: #6e6e73; margin-top: 5px;">경제적, 문화적 차이와 상관없이 모든 친구들을 동등하게 존중하기</p>
             </li>
             <li><strong>지구촌 이슈 탐구</strong>
-              <p style="font-size: 0.9em; color: #555; margin-top: 5px;">세상의 불평등 문제와 환경 문제에 대해 지속적으로 배우고 고민하기</p>
+              <p style="font-size: 0.8em; color: #6e6e73; margin-top: 5px;">세상의 불평등 문제와 환경 문제에 대해 지속적으로 배우고 고민하기</p>
             </li>
             <li><strong>작은 나눔 실천</strong>
-              <p style="font-size: 0.9em; color: #555; margin-top: 5px;">지역 사회와 지구촌을 위한 작은 캠페인이나 봉사 활동에 참여하기</p>
+              <p style="font-size: 0.8em; color: #6e6e73; margin-top: 5px;">지역 사회와 지구촌을 위한 작은 캠페인이나 봉사 활동에 참여하기</p>
             </li>
           </ul>
         </div>
@@ -159,9 +202,10 @@
 
       <!-- Slide 8: End -->
       <section>
-        <br><br>
-        <h1 style="color: #0056b3;">감사합니다</h1>
-        <p style="color: #666;">작은 관심이 모여 세상을 바꿉니다.</p>
+        <div style="text-align: center; margin-top: 15%;">
+          <h1 style="color: #1d1d1f; font-size: 2em;">감사합니다</h1>
+          <p style="color: #86868b; font-size: 0.8em; margin-top: 20px;">작은 관심이 모여 세상을 바꿉니다.</p>
+        </div>
       </section>
 
     </div>
@@ -175,10 +219,10 @@
       controls: true,
       progress: true,
       center: true,
-      transition: 'fade', // Clean PPT fade transition
+      transition: 'fade', // Subtle fade for elegance
       width: 1024,
       height: 768,
-      margin: 0.1,
+      margin: 0.08,
       minScale: 0.2,
       maxScale: 2.0
     });
