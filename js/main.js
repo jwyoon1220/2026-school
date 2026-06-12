@@ -92,8 +92,8 @@ function rebuildScene() {
     return res.ok;
 }
 
-// 카메라 이동 시 컬링 갱신을 위해 재빌드 필요 -> orbit 종료 시 1회 dirty 표시
-orbitControls.addEventListener('end', () => { state.dirty.geometry = true; });
+// 씬 규모가 작아 컬링 재빌드 비용이 이득보다 크므로, 카메라 이동마다
+// 재빌드하지 않음. 컬링은 cullEntities의 임계값(CULL_THRESHOLD) 이하에서 비활성화된다.
 
 // ---------- 윈도우 리사이즈 ----------
 window.addEventListener('resize', () => onWindowResize(core, renderer, camera));

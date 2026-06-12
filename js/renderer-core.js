@@ -29,17 +29,18 @@ export function createPathTracerCore(renderer, camera) {
         ptRenderer, ptSceneGenerator, displayScene, displayCamera, displayMesh,
 
         // 동적 해상도
-        INTERACT_SCALE: 0.4,
+        INTERACT_SCALE: 0.35,   // [최적화] 0.4→0.35: 인터랙션/초기 프리뷰를 더 가볍게
         currentScale: -1,
-        lastInteraction: -1e9,
+        lastInteraction: performance.now(), // [최적화] 시작을 "인터랙션 중" 상태로: 첫 프레임을 저해상도로
 
-        // 적응형 타일링
-        idleGrid: 2,
+        // 적응형 타일링: 컴파일 직후 첫 프레임은 1타일로 즉시 출력
+        idleGrid: 1,
         appliedGrid: -1,
         prevSampleInt: -1,
         avgDt: -1,
         lastFrame: performance.now(),
         wasCompiling: false,
+        firstFramePainted: false, // [최적화] 컴파일 완료 후 첫 프레임 플래그
     };
 
     setGrid(core, core.idleGrid);
@@ -100,6 +101,7 @@ export function stepFrame(core, renderer, camera, params, { rebuildIfDirty, onIn
     if (core.wasCompiling) {
         core.wasCompiling = false;
         resetPathTracer(core);
+        core.lastInteraction = now; // [최적화] 컴파일 완료 시점부터 250ms간 저해상도 프리뷰 보장 → 즉시 표시
     }
 
     const interacting = (now - core.lastInteraction) < 250;

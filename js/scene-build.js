@@ -45,8 +45,17 @@ export function entityBounds(entity) {
     return box;
 }
 
-// 프러스텀 컬링: 카메라 시야 밖 + pinned=false 엔티티는 제외
+// 프러스텀 컬링: 오브젝트 수가 적을 때(<= CULL_THRESHOLD)는 컬링 자체의
+// 계산/리빌드 비용이 이득보다 크고, 카메라가 한 번 빌드된 이후 회전하면
+// 화면 밖→안으로 들어오는 오브젝트가 사라지는 부작용이 있다.
+// 따라서 임계값 이하에서는 전부 포함하고, 그 이상일 때만 컬링한다.
+const CULL_THRESHOLD = 24;
+
 export function cullEntities(entities, camera) {
+    if (entities.length <= CULL_THRESHOLD) {
+        return { visible: entities, culled: 0, total: entities.length };
+    }
+
     camera.updateMatrixWorld();
     camera.updateProjectionMatrix();
     const projScreenMatrix = new THREE.Matrix4()

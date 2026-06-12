@@ -6,7 +6,7 @@
 // ------------------------------------------------------------
 import * as THREE from 'three';
 
-export function makeSkyTexture(renderer, params, W = 256, H = 128) {
+export function makeSkyTexture(renderer, params, W = 128, H = 64) {
     const data = new Float32Array(W * H * 4);
 
     const az = THREE.MathUtils.degToRad(params.sunAzimuth);
