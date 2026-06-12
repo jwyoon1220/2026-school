@@ -74,6 +74,7 @@
             maxSamples: 768,
             resolutionScale: 1.0,
             targetFPS: 30,              // [최적화] 적응형 타일링 목표 프레임레이트
+            debugDisableEnv: false,     // 디버그: 커스텀 환경맵 비활성화(기본 환경 사용)
             filterGlossy: 0.5,          // [최적화] glossy 필터: firefly(노이즈) 억제 → 체감 수렴 빠름
             // 하늘/태양
             envIntensity: 1.0,
@@ -251,14 +252,23 @@
 
             const tex = new THREE.DataTexture(data, W, H, THREE.RGBAFormat, THREE.FloatType);
             tex.mapping = THREE.EquirectangularReflectionMapping;
+            tex.minFilter = THREE.LinearFilter;
+            tex.magFilter = THREE.LinearFilter;
+            tex.generateMipmaps = false;
+            tex.wrapS = THREE.RepeatWrapping;
+            tex.wrapT = THREE.ClampToEdgeWrapping;
+            tex.colorSpace = THREE.NoColorSpace;
             tex.needsUpdate = true;
+            renderer.initTexture(tex); // updateFrom이 픽셀을 읽기 전에 GPU 업로드 보장
             return tex;
         }
 
         function updateEnvironment() {
             if (envTex) envTex.dispose();
             envTex = makeSkyTexture();
-            ptRenderer.material.envMapInfo.updateFrom(envTex);   // CDF 재생성(하늘+태양)
+            if (!params.debugDisableEnv) {
+                ptRenderer.material.envMapInfo.updateFrom(envTex);   // CDF 재생성(하늘+태양)
+            }
             ptRenderer.material.environmentIntensity = params.envIntensity;
             onInteract();
         }
@@ -409,6 +419,7 @@
             sun.addColor(params, 'skyHorizon').name('Sky Horizon').onChange(updateEnvironment);
             sun.addColor(params, 'groundColor').name('Ground').onChange(updateEnvironment);
             sun.add(params, 'envIntensity', 0, 3, 0.05).name('Env Intensity').onChange(updateEnvironment);
+            sun.add(params, 'debugDisableEnv').name('Debug: Disable Custom Env').onChange(updateEnvironment);
 
             const render = gui.addFolder('Render');
             render.add(params, 'bounces', 1, 16, 1).onChange(() => { ptRenderer.bounces = params.bounces; onInteract(); });
