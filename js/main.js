@@ -8,9 +8,9 @@ import { computeBoundsTree, disposeBoundsTree } from 'three-mesh-bvh';
 
 import { state, allEntities, createDefaultEntities, addEntity, markEnvironmentDirty } from './state.js?v=6';
 import { makeSkyTexture } from './sky.js?v=6';
-import { buildPathTracerScene } from './scene-build.js?v=6';
+import { buildPathTracerScene } from './scene-build.js?v=7';
 import { createPathTracerCore, stepFrame, onInteract, onWindowResize } from './renderer-core.js?v=6';
-import { createSelection } from './selection.js?v=6';
+import { createSelection } from './selection.js?v=7';
 import { setupGUI } from './gui.js?v=6';
 import { loadModelFile } from './loader.js?v=6';
 

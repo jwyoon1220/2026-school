@@ -91,6 +91,22 @@ export function cullEntities(entities, camera) {
 }
 
 // 보이는 엔티티들을 BVH/geometry/material 텍스처로 빌드해 ptRenderer.material에 주입
+// 매 빌드마다 새 group/메시를 만들어 BVH를 재생성한다 (정확성 최우선 — 이 라이브러리
+// 버전의 generate()가 transform-only 변경에 대한 refit을 보장하는지 불확실하므로
+// 안전한 전체 재생성을 기본으로 한다).
+//
+// 다만 "텍스처 재업로드"는 비용이 커서, 사용된 텍스처 집합이 이전 빌드와 동일하면
+// material.textures.setTextures를 건너뛴다 (드래그로 위치만 바뀌는 경우가 대부분이라
+// 텍스처 집합은 거의 항상 동일 -> 이 스킵만으로도 체감 차이가 큼).
+let lastTextureSet = null;
+
+function sameTextures(a, b) {
+    if (a === b) return true;
+    if (!a || !b || a.length !== b.length) return false;
+    for (let i = 0; i < a.length; i++) if (a[i] !== b[i]) return false;
+    return true;
+}
+
 export function buildPathTracerScene({ entities, camera, renderer, ptRenderer, ptSceneGenerator }) {
     const { visible, culled, total } = cullEntities(entities, camera);
 
@@ -111,7 +127,12 @@ export function buildPathTracerScene({ entities, camera, renderer, ptRenderer, p
         geometry.attributes.uv, geometry.attributes.color
     );
     material.materialIndexAttribute.updateFrom(geometry.attributes.materialIndex);
-    material.textures.setTextures(renderer, textures, 1024, 1024);
+
+    // [최적화] 텍스처 집합이 이전과 동일하면 재업로드 생략 (가장 비용이 큰 단계 중 하나)
+    if (!sameTextures(textures, lastTextureSet)) {
+        material.textures.setTextures(renderer, textures, 1024, 1024);
+        lastTextureSet = textures;
+    }
     material.materials.updateFrom(materials, textures);
     material.lights.updateFrom([], iesTextures || []); // 조명은 하늘(env)이 담당
 
