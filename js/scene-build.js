@@ -11,8 +11,27 @@ const geometryCache = {
     sphere: new THREE.SphereGeometry(1, 40, 40),
 };
 
-// 엔티티 데이터 1개 -> three.js Mesh (렌더용 임시 객체, dispose 불필요: geometry는 캐시 공유)
+// 엔티티 데이터 1개 -> three.js Object3D (렌더용 임시 객체)
+// type='model'인 경우 entity.modelData(THREE.Group, loader.js에서 로드됨)를 클론해 사용.
 export function entityToMesh(entity) {
+    const [px, py, pz] = entity.transform.position;
+    const [rx, ry, rz] = entity.transform.rotation;
+    const [sx, sy, sz] = entity.transform.scale;
+
+    if (entity.type === 'model') {
+        const group = entity.modelData.clone(true);
+        // 클론된 메시들의 머티리얼도 공유하지 않도록 복제 (path tracer가 머티리얼별 인덱싱을 하므로 안전하게)
+        group.traverse((c) => {
+            if (c.isMesh && c.material) c.material = c.material.clone();
+        });
+        group.position.set(px, py, pz);
+        group.rotation.set(rx, ry, rz);
+        group.scale.set(sx, sy, sz);
+        group.updateMatrixWorld(true);
+        group.userData.entityId = entity.id;
+        return group;
+    }
+
     const geo = geometryCache[entity.type];
     const m = entity.material;
     const matOptions = { color: m.color, roughness: m.roughness, metalness: m.metalness };
@@ -26,9 +45,6 @@ export function entityToMesh(entity) {
         mesh = new THREE.Mesh(geo, new THREE.MeshStandardMaterial(matOptions));
     }
 
-    const [px, py, pz] = entity.transform.position;
-    const [rx, ry, rz] = entity.transform.rotation;
-    const [sx, sy, sz] = entity.transform.scale;
     mesh.position.set(px, py, pz);
     mesh.rotation.set(rx, ry, rz);
     mesh.scale.set(sx, sy, sz);
@@ -41,7 +57,7 @@ export function entityToMesh(entity) {
 export function entityBounds(entity) {
     const mesh = entityToMesh(entity);
     const box = new THREE.Box3().setFromObject(mesh);
-    mesh.geometry = null; // 캐시 geometry는 dispose하지 않음
+    if (entity.type !== 'model') mesh.geometry = null; // 캐시 geometry는 dispose하지 않음
     return box;
 }
 

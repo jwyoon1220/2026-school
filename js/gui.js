@@ -72,5 +72,9 @@ export function setupGUI({ onEnvChange, onInteract, onBouncesChange, onFilterCha
         }
     }, 'deleteSelected').name('Delete Selected');
 
+    obj.add({
+        loadModel: () => document.getElementById('model-file-input').click()
+    }, 'loadModel').name('Load OBJ/GLTF');
+
     return gui;
 }

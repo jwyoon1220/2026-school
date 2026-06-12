@@ -12,6 +12,7 @@ import { buildPathTracerScene } from './scene-build.js';
 import { createPathTracerCore, stepFrame, onInteract, onWindowResize } from './renderer-core.js';
 import { createSelection } from './selection.js';
 import { setupGUI } from './gui.js';
+import { loadModelFile } from './loader.js';
 
 THREE.BufferGeometry.prototype.computeBoundsTree = computeBoundsTree;
 THREE.BufferGeometry.prototype.disposeBoundsTree = disposeBoundsTree;
@@ -97,6 +98,22 @@ function rebuildScene() {
 
 // ---------- 윈도우 리사이즈 ----------
 window.addEventListener('resize', () => onWindowResize(core, renderer, camera));
+
+// ---------- 모델 로더 ----------
+const modelInput = document.getElementById('model-file-input');
+if (modelInput) {
+    modelInput.addEventListener('change', (event) => {
+        const file = event.target.files[0];
+        if (!file) return;
+        if (infoEl) infoEl.innerText = `Loading ${file.name}...`;
+        loadModelFile(
+            file,
+            () => { state.dirty.geometry = true; }, // 다음 프레임에 rebuildIfDirty가 처리
+            (err) => { if (infoEl) infoEl.innerText = `Error: ${err.message}`; }
+        );
+        modelInput.value = ''; // 같은 파일 다시 선택 가능하도록
+    });
+}
 
 // ---------- 메인 루프 ----------
 const infoEl = document.getElementById('samples-info');
