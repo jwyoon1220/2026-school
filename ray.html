@@ -2,12 +2,15 @@
 <html lang="ko">
 <head>
     <meta charset="UTF-8">
-    <title>High-Performance GPU Path Tracer (Optimized)</title>
+    <title>GPU Path Tracer — Sky &amp; Soft Shadows</title>
     <style>
-        body { margin: 0; overflow: hidden; background-color: #111; font-family: sans-serif; }
+        body { margin: 0; overflow: hidden; background:#0a0a0c; font-family: ui-sans-serif, system-ui, sans-serif; }
         canvas { display: block; width: 100vw; height: 100vh; }
-        #ui-container { position: absolute; top: 10px; left: 10px; color: #fff; text-shadow: 1px 1px 2px #000; pointer-events: none; z-index: 10; }
-        #file-input { display: none; }
+        #ui { position: absolute; top: 14px; left: 16px; color:#fff; z-index: 10; pointer-events:none;
+              text-shadow: 0 1px 3px rgba(0,0,0,.6); }
+        #ui h2 { margin:0 0 2px; font-weight:600; letter-spacing:.3px; font-size:18px; }
+        #ui p  { margin:0; font-size:13px; opacity:.85; font-variant-numeric: tabular-nums; }
+        #file-input { display:none; }
     </style>
 
     <script type="importmap">
@@ -15,7 +18,6 @@
             "imports": {
                 "three": "https://unpkg.com/three@0.160.0/build/three.module.js",
                 "three/addons/": "https://unpkg.com/three@0.160.0/examples/jsm/",
-                "three/examples/jsm/": "https://unpkg.com/three@0.160.0/examples/jsm/",
                 "three-mesh-bvh": "https://unpkg.com/three-mesh-bvh@0.7.0/build/index.module.js",
                 "three-gpu-pathtracer": "https://unpkg.com/three-gpu-pathtracer@0.0.21/build/index.module.js",
                 "lil-gui": "https://unpkg.com/lil-gui@0.19.1/dist/lil-gui.esm.min.js"
@@ -24,7 +26,7 @@
     </script>
 </head>
 <body>
-    <div id="ui-container">
+    <div id="ui">
         <h2>Web GPU Raytracer</h2>
         <p id="samples-info">Samples: 0</p>
     </div>
@@ -33,7 +35,6 @@
     <script type="module">
         import * as THREE from 'three';
         import { OrbitControls } from 'three/addons/controls/OrbitControls.js';
-        import { PointerLockControls } from 'three/addons/controls/PointerLockControls.js';
         import { GLTFLoader } from 'three/addons/loaders/GLTFLoader.js';
         import { OBJLoader } from 'three/addons/loaders/OBJLoader.js';
         import GUI from 'lil-gui';
@@ -41,32 +42,40 @@
         import { PathTracingRenderer, PhysicalPathTracingMaterial, PathTracingSceneGenerator } from 'three-gpu-pathtracer';
 
         window.THREE = THREE;
-
         THREE.BufferGeometry.prototype.computeBoundsTree = computeBoundsTree;
         THREE.BufferGeometry.prototype.disposeBoundsTree = disposeBoundsTree;
 
-        let camera, scene, renderer, ptRenderer, ptSceneGenerator;
+        let camera, renderer, ptRenderer, ptSceneGenerator;
         let displayScene, displayCamera, displayMesh;
-        let orbitControls, fpsControls;
-        let lightModel, pointLight;
+        let orbitControls;
+        let envTex = null;
 
-        // 렌더링 데이터
         let sceneMeshes = [];
-        let renderNeedsUpdate = false;  // true일 때만 BVH 전체 재빌드 (지오메트리 변경 시)
-        let lastSamples = -1;           // [최적화] DOM 텍스트 불필요 갱신 방지
+        let renderNeedsUpdate = false;   // 지오메트리 변경 시에만 BVH 재빌드
+        let lastSamples = -1;
 
-        // GUI 파라미터
+        // [최적화] 동적 해상도: 인터랙션 중에는 저해상도로 렌더 → 멈추면 풀해상도로 수렴
+        const INTERACT_SCALE = 0.4;
+        let currentScale = -1;
+        let lastInteraction = -1e9;
+
         const params = {
-            bounces: 3,
-            maxSamples: 512,            // [최적화] 수렴 후 렌더 정지 (GPU/배터리 절약)
-            resolutionScale: 1.0,       // [최적화] 내부 렌더 해상도 분리 (업스케일 표시)
-            lightColor: '#ffffff',
-            lightIntensity: 60.0,       // [최적화] analytic point light 기준값 (슬라이더로 튜닝)
-            lightX: 5,
-            lightY: 5,
-            lightZ: 5,
-            showLightOrb: false,        // [최적화] 광원을 보이는 emissive 구체로 표시할지 여부
-            cameraMode: 'Orbit (Plane)',
+            // 렌더
+            bounces: 6,
+            maxSamples: 768,
+            resolutionScale: 1.0,
+            filterGlossy: 0.5,          // [최적화] glossy 필터: firefly(노이즈) 억제 → 체감 수렴 빠름
+            // 하늘/태양
+            envIntensity: 1.0,
+            skyZenith: '#3a6ea5',
+            skyHorizon: '#cfe2f3',
+            groundColor: '#2a2622',
+            sunColor: '#fff4e0',
+            sunAzimuth: 35,             // 방위각(°) — 그림자 방향
+            sunElevation: 42,           // 고도(°)  — 그림자 길이
+            sunSize: 3.0,               // 태양 각크기(°) — 그림자 부드러움(클수록 soft)
+            sunIntensity: 18.0,         // 태양 밝기
+            // 오브젝트
             addSphere: () => addPrimitive('sphere'),
             addBox: () => addPrimitive('box'),
             loadModel: () => document.getElementById('file-input').click()
@@ -76,60 +85,43 @@
         animate();
 
         function init() {
-            // 1. 렌더러 설정
+            // 렌더러
             renderer = new THREE.WebGLRenderer({ antialias: false, powerPreference: "high-performance" });
             renderer.toneMapping = THREE.ACESFilmicToneMapping;
+            renderer.toneMappingExposure = 1.0;
             renderer.setSize(window.innerWidth, window.innerHeight);
             renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
             document.body.appendChild(renderer.domElement);
 
-            // 2. 카메라
-            camera = new THREE.PerspectiveCamera(60, window.innerWidth / window.innerHeight, 0.1, 1000);
-            camera.position.set(0, 5, 10);
+            // 카메라
+            camera = new THREE.PerspectiveCamera(55, window.innerWidth / window.innerHeight, 0.1, 1000);
+            camera.position.set(6, 4.5, 9);
 
-            // 3. 패스트레이싱 렌더러 (축적형)
+            // 패스트레이서
             ptRenderer = new PathTracingRenderer(renderer);
             ptRenderer.camera = camera;
             ptRenderer.material = new PhysicalPathTracingMaterial();
-            ptRenderer.tiles.set(2, 2);
+            ptRenderer.tiles.set(3, 2);
+            ptRenderer.material.filterGlossyFactor = params.filterGlossy;
 
             ptSceneGenerator = new PathTracingSceneGenerator();
             ptSceneGenerator.generateBVH = true;
 
-            // 카메라 컨트롤
+            // 컨트롤
             orbitControls = new OrbitControls(camera, renderer.domElement);
-            orbitControls.target.set(0, 0, 0);
-            orbitControls.addEventListener('change', resetPathTracer);
+            orbitControls.target.set(0, 1.2, 0);
+            orbitControls.update();
+            orbitControls.addEventListener('change', onInteract);
 
-            fpsControls = new PointerLockControls(camera, document.body);
-            fpsControls.addEventListener('change', resetPathTracer);
+            // 기본 씬 (예쁜 데모 장면)
+            buildDefaultScene();
 
-            // 4. 씬 & 기본 환경
-            scene = new THREE.Scene();
-
-            const floorGeo = new THREE.BoxGeometry(20, 0.1, 20);
-            const floorMat = new THREE.MeshStandardMaterial({ color: 0x888888, roughness: 0.1, metalness: 0.0 });
-            const floor = new THREE.Mesh(floorGeo, floorMat);
-            floor.position.y = -0.05;
-            sceneMeshes.push(floor);
-
-            // 광원 위치 추적용 (렌더되지는 않음, 위치/색 보관용)
-            lightModel = new THREE.Object3D();
-
-            // [최적화] 광원은 analytic PointLight 하나로 통일 (기존: PointLight + emissive 구체 = 이중 조명 버그)
-            pointLight = new THREE.PointLight(params.lightColor, params.lightIntensity, 0);
-            updateLightTransform();
-
-            // 5. GUI
+            // GUI / 이벤트
             setupGUI();
-
-            // 6. 파일 로더
             document.getElementById('file-input').addEventListener('change', handleFileUpload);
-
-            // 7. 리사이즈
             window.addEventListener('resize', onWindowResize);
 
-            // 8. 화면 표시용 풀스크린 쿼드 (ptRenderer.target → canvas)
+            // 화면 표시용 풀스크린 쿼드
             displayCamera = new THREE.OrthographicCamera(-1, 1, 1, -1, 0, 1);
             displayScene = new THREE.Scene();
             displayMesh = new THREE.Mesh(
@@ -139,61 +131,143 @@
             displayMesh.frustumCulled = false;
             displayScene.add(displayMesh);
 
-            updatePTSize();   // [최적화] resolutionScale 반영하여 ptRenderer 크기 설정
-            updatePTScene();  // 초기 BVH 빌드
+            updateEnvironment();                 // 하늘/태양 환경광
+            applyScale(params.resolutionScale);  // 초기 렌더 타깃 크기
+            updatePTScene();                     // 초기 BVH
         }
 
-        // 광원 transform만 갱신 (재빌드 없음)
-        function updateLightTransform() {
-            const col = new THREE.Color(params.lightColor);
-            lightModel.position.set(params.lightX, params.lightY, params.lightZ);
-            pointLight.position.copy(lightModel.position);
-            pointLight.color.set(col);
-            pointLight.intensity = params.lightIntensity;
+        // ---------- 기본 장면 ----------
+        function buildDefaultScene() {
+            // 바닥: 살짝 거친 유전체 → 하늘을 부드럽게 반사
+            const floor = new THREE.Mesh(
+                new THREE.BoxGeometry(40, 0.2, 40),
+                new THREE.MeshStandardMaterial({ color: 0xb8b8bc, roughness: 0.08, metalness: 0.0 })
+            );
+            floor.position.y = -0.1;
+            sceneMeshes.push(floor);
+
+            // 거울 구
+            sceneMeshes.push(makeMesh(
+                new THREE.SphereGeometry(1.3, 48, 48),
+                new THREE.MeshStandardMaterial({ color: 0xffffff, metalness: 1.0, roughness: 0.02 }),
+                -3.2, 1.3, 0
+            ));
+
+            // 금속(골드) 구
+            sceneMeshes.push(makeMesh(
+                new THREE.SphereGeometry(1.3, 48, 48),
+                new THREE.MeshStandardMaterial({ color: 0xffc864, metalness: 1.0, roughness: 0.18 }),
+                0, 1.3, -1.5
+            ));
+
+            // 유리 구 (투과 — path tracer가 굴절/투명 처리)
+            const glass = new THREE.MeshPhysicalMaterial({
+                color: 0xffffff, metalness: 0.0, roughness: 0.0,
+                transmission: 1.0, ior: 1.5, thickness: 1.4
+            });
+            sceneMeshes.push(makeMesh(new THREE.SphereGeometry(1.3, 48, 48), glass, 3.2, 1.3, 0));
+
+            // 컬러 러프 박스
+            sceneMeshes.push(makeMesh(
+                new THREE.BoxGeometry(1.8, 1.8, 1.8),
+                new THREE.MeshStandardMaterial({ color: 0x2f9e8f, roughness: 0.55, metalness: 0.0 }),
+                1.4, 0.9, 2.6
+            ));
         }
 
-        // [최적화] 광원 변경 핸들러: orb 모드가 아니면 BVH 재빌드 없이 조명 uniform만 갱신
-        function updateLight() {
-            updateLightTransform();
+        function makeMesh(geo, mat, x, y, z) {
+            const m = new THREE.Mesh(geo, mat);
+            m.position.set(x, y, z);
+            return m;
+        }
 
-            if (params.showLightOrb) {
-                // 보이는 구체 = 지오메트리이므로 위치를 옮기려면 BVH 재빌드 필요
-                renderNeedsUpdate = true;
-            } else {
-                // analytic light: lights uniform만 갱신 → 매우 저렴
-                if (ptRenderer.material.lights) {
-                    ptRenderer.material.lights.updateFrom([pointLight], []);
+        // ---------- 절차적 하늘 환경맵 ----------
+        // equirect Float 텍스처를 직접 만들어 envMapInfo에 주입. 태양 디스크가 importance sampling되어
+        // 소프트 섀도를 만든다 (디스크 각크기 = 그림자 부드러움).
+        function makeSkyTexture(W = 256, H = 128) {
+            const data = new Float32Array(W * H * 4);
+
+            const az = THREE.MathUtils.degToRad(params.sunAzimuth);
+            const el = THREE.MathUtils.degToRad(params.sunElevation);
+            const sun = new THREE.Vector3(
+                Math.cos(el) * Math.sin(az),
+                Math.sin(el),
+                Math.cos(el) * Math.cos(az)
+            ).normalize();
+
+            const zen = new THREE.Color(params.skyZenith);
+            const hor = new THREE.Color(params.skyHorizon);
+            const grd = new THREE.Color(params.groundColor);
+            const sunCol = new THREE.Color(params.sunColor);
+            const cosSize = Math.cos(THREE.MathUtils.degToRad(params.sunSize));
+
+            for (let y = 0; y < H; y++) {
+                const v = (y + 0.5) / H;          // 0(위) → 1(아래)
+                const theta = v * Math.PI;
+                const cy = Math.cos(theta);       // +1 위 → -1 아래
+                const sy = Math.sin(theta);
+                for (let x = 0; x < W; x++) {
+                    const phi = ((x + 0.5) / W) * 2 * Math.PI;
+                    const dx = sy * Math.sin(phi);
+                    const dz = sy * Math.cos(phi);
+
+                    let r, g, b;
+                    if (cy >= 0) {
+                        const t = Math.pow(cy, 0.5);            // 수평선→천정 그라디언트
+                        r = hor.r * (1 - t) + zen.r * t;
+                        g = hor.g * (1 - t) + zen.g * t;
+                        b = hor.b * (1 - t) + zen.b * t;
+                    } else {
+                        r = grd.r; g = grd.g; b = grd.b;
+                    }
+
+                    const d = dx * sun.x + cy * sun.y + dz * sun.z;  // 시선·태양 내적
+                    if (d > cosSize) {
+                        r += sunCol.r * params.sunIntensity;
+                        g += sunCol.g * params.sunIntensity;
+                        b += sunCol.b * params.sunIntensity;
+                    }
+
+                    const i = (y * W + x) * 4;
+                    data[i] = r; data[i + 1] = g; data[i + 2] = b; data[i + 3] = 1;
                 }
-                resetPathTracer();
             }
+
+            const tex = new THREE.DataTexture(data, W, H, THREE.RGBAFormat, THREE.FloatType);
+            tex.mapping = THREE.EquirectangularReflectionMapping;
+            tex.needsUpdate = true;
+            return tex;
         }
 
-        // 도형 추가 (지오메트리 변경 → 재빌드)
-        function addPrimitive(type) {
-            let geo;
-            if (type === 'sphere') geo = new THREE.SphereGeometry(1, 32, 32);
-            else if (type === 'box') geo = new THREE.BoxGeometry(1.5, 1.5, 1.5);
+        function updateEnvironment() {
+            if (envTex) envTex.dispose();
+            envTex = makeSkyTexture();
+            ptRenderer.material.envMapInfo.updateFrom(envTex);   // CDF 재생성(하늘+태양)
+            ptRenderer.material.environmentIntensity = params.envIntensity;
+            onInteract();
+        }
 
+        // ---------- 오브젝트 추가/로드 (지오메트리 변경 → 재빌드) ----------
+        function addPrimitive(type) {
+            const geo = type === 'sphere'
+                ? new THREE.SphereGeometry(1, 40, 40)
+                : new THREE.BoxGeometry(1.5, 1.5, 1.5);
             const mat = new THREE.MeshStandardMaterial({
                 color: Math.random() * 0xffffff,
-                roughness: Math.random(),
-                metalness: Math.random()
+                roughness: Math.random() * 0.8,
+                metalness: Math.random() > 0.5 ? 1.0 : 0.0
             });
-
             const mesh = new THREE.Mesh(geo, mat);
-            mesh.position.set((Math.random() - 0.5) * 10, 1 + Math.random() * 2, (Math.random() - 0.5) * 10);
-
+            mesh.position.set((Math.random() - 0.5) * 12, 1 + Math.random() * 2, (Math.random() - 0.5) * 12);
             sceneMeshes.push(mesh);
             renderNeedsUpdate = true;
         }
 
-        // 3D 모델 로드 (지오메트리 변경 → 재빌드)
         function handleFileUpload(event) {
             const file = event.target.files[0];
             if (!file) return;
-
             const url = URL.createObjectURL(file);
-            const extension = file.name.split('.').pop().toLowerCase();
+            const ext = file.name.split('.').pop().toLowerCase();
 
             const onLoad = (object) => {
                 const model = object.scene || object;
@@ -201,31 +275,25 @@
                 const center = box.getCenter(new THREE.Vector3());
                 const size = box.getSize(new THREE.Vector3());
                 const maxDim = Math.max(size.x, size.y, size.z);
-
                 model.scale.setScalar(5 / maxDim);
                 model.position.sub(center.multiplyScalar(5 / maxDim));
                 model.position.y += 2.5;
-                model.updateMatrixWorld(true);  // 트랜스폼 확정 후 BVH에 반영
-
-                model.traverse((child) => {
-                    if (child.isMesh) {
-                        if (child.material) child.material.roughness = 0.2;
-                        sceneMeshes.push(child);
+                model.updateMatrixWorld(true);
+                model.traverse((c) => {
+                    if (c.isMesh) {
+                        if (c.material) c.material.roughness = 0.2;
+                        sceneMeshes.push(c);
                     }
                 });
-
                 renderNeedsUpdate = true;
                 URL.revokeObjectURL(url);
             };
 
-            if (extension === 'gltf' || extension === 'glb') {
-                new GLTFLoader().load(url, onLoad);
-            } else if (extension === 'obj') {
-                new OBJLoader().load(url, onLoad);
-            }
+            if (ext === 'gltf' || ext === 'glb') new GLTFLoader().load(url, onLoad);
+            else if (ext === 'obj') new OBJLoader().load(url, onLoad);
         }
 
-        // GPU로 씬 데이터를 넘기고 BVH 생성 (지오메트리 변경 시에만 호출)
+        // ---------- BVH 빌드 (지오메트리 변경 시에만) ----------
         function updatePTScene() {
             const info = document.getElementById('samples-info');
             info.innerText = "Building BVH...";
@@ -233,57 +301,42 @@
             const group = new THREE.Group();
             sceneMeshes.forEach(m => group.add(m.clone()));
 
-            // [최적화] orb 모드일 때만 emissive 구체를 BVH에 포함, 이때는 analytic light를 끔 (이중 조명 방지)
-            let analyticLights;
-            if (params.showLightOrb) {
-                const emissiveMat = new THREE.MeshStandardMaterial({
-                    color: 0x000000,
-                    emissive: new THREE.Color(params.lightColor),
-                    emissiveIntensity: params.lightIntensity
-                });
-                const orb = new THREE.Mesh(new THREE.SphereGeometry(0.5, 16, 16), emissiveMat);
-                orb.position.copy(lightModel.position);
-                group.add(orb);
-                analyticLights = [];
-            } else {
-                analyticLights = [pointLight];
-            }
-
             try {
                 ptSceneGenerator.setObjects(group);
-                const result = ptSceneGenerator.generate();
-
-                const { bvh, geometry, materials, textures, iesTextures } = result;
+                const { bvh, geometry, materials, textures, iesTextures } = ptSceneGenerator.generate();
                 const material = ptRenderer.material;
 
                 if (bvh && geometry) {
                     material.bvh.updateFrom(bvh);
                     material.attributesArray.updateFrom(
-                        geometry.attributes.normal,
-                        geometry.attributes.tangent,
-                        geometry.attributes.uv,
-                        geometry.attributes.color
+                        geometry.attributes.normal, geometry.attributes.tangent,
+                        geometry.attributes.uv, geometry.attributes.color
                     );
                     material.materialIndexAttribute.updateFrom(geometry.attributes.materialIndex);
-
-                    const textureSize = 1024;
-                    material.textures.setTextures(renderer, textures, textureSize, textureSize);
+                    material.textures.setTextures(renderer, textures, 1024, 1024);
                     material.materials.updateFrom(materials, textures);
-
-                    // [최적화] 광원은 우리가 직접 관리 (생성기 자동 추출에 의존하지 않아 이중 조명 방지)
-                    material.lights.updateFrom(analyticLights, iesTextures || []);
+                    material.lights.updateFrom([], iesTextures || []);  // 조명은 하늘(env)이 담당
 
                     ptRenderer.bounces = params.bounces;
-                    resetPathTracer();
+                    onInteract();
                     console.log('✅ BVH 재빌드 완료');
                 } else {
-                    console.warn('⚠️ BVH 또는 geometry 없음');
                     info.innerText = "Error: No BVH generated";
                 }
-            } catch (error) {
-                console.error('❌ BVH 생성 오류:', error);
-                info.innerText = "Error: " + error.message;
+            } catch (e) {
+                console.error('❌ BVH 오류:', e);
+                info.innerText = "Error: " + e.message;
             }
+        }
+
+        // ---------- 해상도/리셋 ----------
+        function applyScale(s) {
+            if (Math.abs(s - currentScale) < 1e-4) return;
+            currentScale = s;
+            ptRenderer.setSize(Math.ceil(window.innerWidth * s), Math.ceil(window.innerHeight * s));
+            displayMesh.material.map = ptRenderer.target.texture;
+            displayMesh.material.needsUpdate = true;
+            resetPathTracer();
         }
 
         function resetPathTracer() {
@@ -291,69 +344,64 @@
             lastSamples = -1;
         }
 
-        // [최적화] resolutionScale 기준으로 ptRenderer 크기 설정 (canvas는 풀해상도, 내부는 축소 후 업스케일)
-        function updatePTSize() {
-            const s = params.resolutionScale;
-            ptRenderer.setSize(window.innerWidth * s, window.innerHeight * s);
-            displayMesh.material.map = ptRenderer.target.texture;
-            displayMesh.material.needsUpdate = true;
-        }
-
-        function setupGUI() {
-            const gui = new GUI();
-
-            const lightFolder = gui.addFolder('Light Settings');
-            lightFolder.add(params, 'lightX', -10, 10).onChange(updateLight);
-            lightFolder.add(params, 'lightY', 1, 15).onChange(updateLight);
-            lightFolder.add(params, 'lightZ', -10, 10).onChange(updateLight);
-            lightFolder.addColor(params, 'lightColor').onChange(updateLight);
-            lightFolder.add(params, 'lightIntensity', 0, 500).onChange(updateLight);
-            lightFolder.add(params, 'showLightOrb').name('Show Light Orb').onChange(() => { renderNeedsUpdate = true; });
-
-            const renderFolder = gui.addFolder('Render Settings');
-            renderFolder.add(params, 'bounces', 1, 10, 1).onChange(() => { ptRenderer.bounces = params.bounces; resetPathTracer(); });
-            renderFolder.add(params, 'maxSamples', 16, 4096, 16);
-            renderFolder.add(params, 'resolutionScale', 0.25, 1.0, 0.05).name('Resolution Scale')
-                .onChange(() => { updatePTSize(); resetPathTracer(); });
-
-            const objectsFolder = gui.addFolder('Objects');
-            objectsFolder.add(params, 'addSphere').name('Add Sphere');
-            objectsFolder.add(params, 'addBox').name('Add Box');
-            objectsFolder.add(params, 'loadModel').name('Load OBJ/GLTF');
-
-            const cameraFolder = gui.addFolder('Camera');
-            cameraFolder.add(params, 'cameraMode', ['Orbit (Plane)', 'FPS']).onChange(mode => {
-                if (mode === 'FPS') {
-                    orbitControls.enabled = false;
-                    fpsControls.lock();
-                } else {
-                    fpsControls.unlock();
-                    orbitControls.enabled = true;
-                }
-            });
+        // 인터랙션 발생 표시 → 저해상도 프리뷰 + 누적 리셋
+        function onInteract() {
+            lastInteraction = performance.now();
+            resetPathTracer();
         }
 
         function onWindowResize() {
             camera.aspect = window.innerWidth / window.innerHeight;
             camera.updateProjectionMatrix();
             renderer.setSize(window.innerWidth, window.innerHeight);
-            updatePTSize();        // [최적화] 리사이즈 시 스케일 재적용
-            resetPathTracer();
+            currentScale = -1;   // 다음 프레임에 스케일 재적용
+            onInteract();
         }
 
+        // ---------- GUI ----------
+        function setupGUI() {
+            const gui = new GUI();
+
+            const sun = gui.addFolder('Sun & Sky');
+            sun.add(params, 'sunAzimuth', 0, 360, 1).name('Sun Azimuth').onChange(updateEnvironment);
+            sun.add(params, 'sunElevation', -10, 90, 1).name('Sun Elevation').onChange(updateEnvironment);
+            sun.add(params, 'sunSize', 0.5, 30, 0.5).name('Shadow Softness').onChange(updateEnvironment);
+            sun.add(params, 'sunIntensity', 0, 60, 0.5).name('Sun Intensity').onChange(updateEnvironment);
+            sun.addColor(params, 'sunColor').name('Sun Color').onChange(updateEnvironment);
+            sun.addColor(params, 'skyZenith').name('Sky Top').onChange(updateEnvironment);
+            sun.addColor(params, 'skyHorizon').name('Sky Horizon').onChange(updateEnvironment);
+            sun.addColor(params, 'groundColor').name('Ground').onChange(updateEnvironment);
+            sun.add(params, 'envIntensity', 0, 3, 0.05).name('Env Intensity').onChange(updateEnvironment);
+
+            const render = gui.addFolder('Render');
+            render.add(params, 'bounces', 1, 16, 1).onChange(() => { ptRenderer.bounces = params.bounces; onInteract(); });
+            render.add(params, 'maxSamples', 32, 4096, 16);
+            render.add(params, 'resolutionScale', 0.25, 1.0, 0.05).name('Resolution').onChange(onInteract);
+            render.add(params, 'filterGlossy', 0, 1, 0.05).name('Glossy Filter')
+                  .onChange(() => { ptRenderer.material.filterGlossyFactor = params.filterGlossy; onInteract(); });
+            render.add(renderer, 'toneMappingExposure', 0.2, 2.0, 0.05).name('Exposure').onChange(onInteract);
+
+            const obj = gui.addFolder('Objects');
+            obj.add(params, 'addSphere').name('Add Sphere');
+            obj.add(params, 'addBox').name('Add Box');
+            obj.add(params, 'loadModel').name('Load OBJ/GLTF');
+        }
+
+        // ---------- 메인 루프 ----------
         function animate() {
             requestAnimationFrame(animate);
 
-            // 지오메트리 변경이 있을 때만 BVH 재빌드
-            if (renderNeedsUpdate) {
-                updatePTScene();
-                renderNeedsUpdate = false;
-            }
+            if (renderNeedsUpdate) { updatePTScene(); renderNeedsUpdate = false; }
+
+            // [최적화] 동적 해상도
+            const interacting = (performance.now() - lastInteraction) < 250;
+            const target = interacting ? Math.min(INTERACT_SCALE, params.resolutionScale) : params.resolutionScale;
+            applyScale(target);
 
             const samples = Math.floor(ptRenderer.samples);
 
-            // [최적화] 목표 샘플 수렴 시 update/render 모두 스킵 → GPU 유휴, 배터리 절약
-            if (ptRenderer.samples >= params.maxSamples) {
+            // [최적화] 수렴 완료 + 정지 상태면 렌더 스킵 (GPU/배터리 절약)
+            if (!interacting && ptRenderer.samples >= params.maxSamples) {
                 if (lastSamples !== samples) {
                     document.getElementById('samples-info').innerText = `Samples: ${samples} (done)`;
                     lastSamples = samples;
@@ -369,7 +417,8 @@
             renderer.render(displayScene, displayCamera);
 
             if (lastSamples !== samples) {
-                document.getElementById('samples-info').innerText = `Samples: ${samples}`;
+                const tag = interacting ? ' (preview)' : '';
+                document.getElementById('samples-info').innerText = `Samples: ${samples}${tag}`;
                 lastSamples = samples;
             }
         }
