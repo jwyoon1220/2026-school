@@ -77,15 +77,15 @@
             debugDisableEnv: false,     // 디버그: 커스텀 환경맵 비활성화(기본 환경 사용)
             filterGlossy: 0.5,          // [최적화] glossy 필터: firefly(노이즈) 억제 → 체감 수렴 빠름
             // 하늘/태양
-            envIntensity: 1.0,
-            skyZenith: '#3a6ea5',
-            skyHorizon: '#cfe2f3',
-            groundColor: '#2a2622',
+            envIntensity: 2.0,
+            skyZenith: '#5e9bd6',
+            skyHorizon: '#e8f3ff',
+            groundColor: '#4a4540',
             sunColor: '#fff4e0',
             sunAzimuth: 35,             // 방위각(°) — 그림자 방향
-            sunElevation: 42,           // 고도(°)  — 그림자 길이
-            sunSize: 3.0,               // 태양 각크기(°) — 그림자 부드러움(클수록 soft)
-            sunIntensity: 18.0,         // 태양 밝기
+            sunElevation: 55,           // 고도(°)  — 그림자 길이
+            sunSize: 4.0,               // 태양 각크기(°) — 그림자 부드러움(클수록 soft)
+            sunIntensity: 40.0,         // 태양 밝기
             // 오브젝트
             addSphere: () => addPrimitive('sphere'),
             addBox: () => addPrimitive('box'),
@@ -99,7 +99,7 @@
             // 렌더러
             renderer = new THREE.WebGLRenderer({ antialias: false, powerPreference: "high-performance" });
             renderer.toneMapping = THREE.ACESFilmicToneMapping;
-            renderer.toneMappingExposure = 1.0;
+            renderer.toneMappingExposure = 1.6;
             renderer.setSize(window.innerWidth, window.innerHeight);
             renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
             document.body.appendChild(renderer.domElement);
