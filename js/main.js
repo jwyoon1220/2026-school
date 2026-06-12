@@ -6,13 +6,13 @@ import * as THREE from 'three';
 import { OrbitControls } from 'three/addons/controls/OrbitControls.js';
 import { computeBoundsTree, disposeBoundsTree } from 'three-mesh-bvh';
 
-import { state, allEntities, createDefaultEntities, addEntity, markEnvironmentDirty } from './state.js?v=5';
-import { makeSkyTexture } from './sky.js?v=5';
-import { buildPathTracerScene } from './scene-build.js?v=5';
-import { createPathTracerCore, stepFrame, onInteract, onWindowResize } from './renderer-core.js?v=5';
-import { createSelection } from './selection.js?v=5';
-import { setupGUI } from './gui.js?v=5';
-import { loadModelFile } from './loader.js?v=5';
+import { state, allEntities, createDefaultEntities, addEntity, markEnvironmentDirty } from './state.js?v=6';
+import { makeSkyTexture } from './sky.js?v=6';
+import { buildPathTracerScene } from './scene-build.js?v=6';
+import { createPathTracerCore, stepFrame, onInteract, onWindowResize } from './renderer-core.js?v=6';
+import { createSelection } from './selection.js?v=6';
+import { setupGUI } from './gui.js?v=6';
+import { loadModelFile } from './loader.js?v=6';
 
 THREE.BufferGeometry.prototype.computeBoundsTree = computeBoundsTree;
 THREE.BufferGeometry.prototype.disposeBoundsTree = disposeBoundsTree;
@@ -30,6 +30,8 @@ camera.position.set(6, 4.5, 9);
 
 const orbitControls = new OrbitControls(camera, renderer.domElement);
 orbitControls.target.set(0, 1.2, 0);
+orbitControls.enableDamping = true;   // [최적화] 관성 댐핑: 드래그 후 카메라가 부드럽게 멈춤
+orbitControls.dampingFactor = 0.08;
 orbitControls.update();
 
 // 보조 씬 (선택 기즈모 등 래스터 오버레이용 — 패스트레이서와 별개)
@@ -117,8 +119,11 @@ if (modelInput) {
 
 // ---------- 메인 루프 ----------
 const infoEl = document.getElementById('samples-info');
+let rafId = null;
+
 function animate() {
-    requestAnimationFrame(animate);
+    rafId = requestAnimationFrame(animate);
+    orbitControls.update(); // [최적화] 댐핑 적용 (입력 없을 때도 호출해야 자연스럽게 감속)
     stepFrame(core, renderer, camera, state.params, {
         rebuildIfDirty: () => {
             if (!state.dirty.geometry) return false;
@@ -134,4 +139,17 @@ function animate() {
         renderer.autoClear = true;
     }
 }
+
+// [최적화] 탭이 백그라운드일 때 루프를 완전히 멈춰 GPU/배터리 절약.
+// 복귀 시 누적을 리셋하고 다시 시작 (백그라운드 동안 쌓인 비정상 dt 방지).
+document.addEventListener('visibilitychange', () => {
+    if (document.hidden) {
+        if (rafId !== null) { cancelAnimationFrame(rafId); rafId = null; }
+    } else if (rafId === null) {
+        core.lastFrame = performance.now();
+        onInteract(core);
+        animate();
+    }
+});
+
 animate();

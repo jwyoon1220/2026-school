@@ -6,8 +6,8 @@
 // ------------------------------------------------------------
 import * as THREE from 'three';
 import { TransformControls } from 'three/addons/controls/TransformControls.js';
-import { state, setTransform } from './state.js?v=5';
-import { entityToMesh, entityBounds } from './scene-build.js?v=5';
+import { state, setTransform } from './state.js?v=6';
+import { entityToMesh, entityBounds } from './scene-build.js?v=6';
 
 export function createSelection({ renderer, camera, scene, orbitControls, onDragStateChange }) {
     const gizmo = new TransformControls(camera, renderer.domElement);

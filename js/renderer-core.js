@@ -29,7 +29,7 @@ export function createPathTracerCore(renderer, camera) {
         ptRenderer, ptSceneGenerator, displayScene, displayCamera, displayMesh,
 
         // 동적 해상도
-        INTERACT_SCALE: 0.35,   // [최적화] 0.4→0.35: 인터랙션/초기 프리뷰를 더 가볍게
+        INTERACT_SCALE: 0.25,   // [최적화] 0.35→0.25: 인터랙션 프리뷰를 더 가볍게 (반응성↑)
         currentScale: -1,
         lastInteraction: performance.now(), // [최적화] 시작을 "인터랙션 중" 상태로: 첫 프레임을 저해상도로
 
@@ -74,7 +74,7 @@ export function onInteract(core) {
 
 function adaptTiles(core, targetFPS) {
     const targetMs = 1000 / targetFPS;
-    if (core.avgDt > targetMs * 1.25 && core.idleGrid < 8) core.idleGrid++;
+    if (core.avgDt > targetMs * 1.25 && core.idleGrid < 16) core.idleGrid++;
     else if (core.avgDt < targetMs * 0.7 && core.idleGrid > 1) core.idleGrid--;
 }
 
@@ -130,7 +130,12 @@ export function stepFrame(core, renderer, camera, params, { rebuildIfDirty, onIn
 
     const fps = Math.round(1000 / Math.max(core.avgDt, 1));
     const tag = converged ? ' · done' : (interacting ? ' · preview' : ` · ${core.idleGrid}×${core.idleGrid} tiles`);
-    onInfo(`Samples: ${sampleInt} · ${fps}fps${tag}`);
+
+    // [최적화] innerText 쓰기는 리플로우를 유발하므로 4Hz로만 갱신
+    if (now - (core.lastInfoUpdate || 0) > 250) {
+        core.lastInfoUpdate = now;
+        onInfo(`Samples: ${sampleInt} · ${fps}fps${tag}`);
+    }
 }
 
 export function onWindowResize(core, renderer, camera) {

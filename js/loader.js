@@ -6,7 +6,7 @@
 import * as THREE from 'three';
 import { GLTFLoader } from 'three/addons/loaders/GLTFLoader.js';
 import { OBJLoader } from 'three/addons/loaders/OBJLoader.js';
-import { addEntity, makeId } from './state.js?v=5';
+import { addEntity, makeId } from './state.js?v=6';
 
 const gltfLoader = new GLTFLoader();
 const objLoader = new OBJLoader();
