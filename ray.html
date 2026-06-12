@@ -66,7 +66,7 @@
         let prevSampleInt = -1;
         let avgDt = -1;          // 프레임 시간 EMA(ms)
         let lastFrame = performance.now();
-        let cullRefreshed = true;  // 마지막 인터랙션 이후 컬링 갱신 완료 여부
+        let wasCompiling = false;
 
         const params = {
             // 렌더
@@ -450,15 +450,24 @@
 
             if (renderNeedsUpdate) { updatePTScene(); renderNeedsUpdate = false; }
 
+            // [버그 수정] PhysicalPathTracingMaterial은 비동기로 컴파일된다.
+            // 컴파일 완료 전에 update()를 호출하면 빈/이전 타깃이 그려져
+            // "벽 + 검은 점" 같은 깨진 화면이 나온다. isCompiling이 끝날 때까지 대기.
+            const materialReady = !ptRenderer.material.isCompiling;
+            if (!materialReady) {
+                wasCompiling = true;
+                document.getElementById('samples-info').innerText = 'Compiling shader...';
+                renderer.setRenderTarget(null);
+                renderer.render(displayScene, displayCamera); // 직전 유효 프레임 유지
+                return;
+            }
+            if (wasCompiling) {
+                wasCompiling = false;
+                resetPathTracer(); // 컴파일 중 누적된 잘못된 샘플 폐기
+            }
+
             // [최적화] 동적 해상도
             const interacting = (now - lastInteraction) < 250;
-
-            // [최적화] 인터랙션이 막 끝난 시점에 프러스텀 컬링 갱신 (1회만)
-            if (!interacting && !cullRefreshed) {
-                cullRefreshed = true;
-                updatePTScene();
-            }
-            if (interacting) cullRefreshed = false;
 
             const target = interacting ? Math.min(INTERACT_SCALE, params.resolutionScale) : params.resolutionScale;
             applyScale(target);
