@@ -60,11 +60,19 @@
         let currentScale = -1;
         let lastInteraction = -1e9;
 
+        // [최적화] 적응형 타일링: 프레임 시간을 보고 타일 수를 조절해 목표 fps 유지
+        let idleGrid = 2;        // 정지 시 한 축당 타일 수 (n×n 타일로 1샘플을 분할)
+        let appliedGrid = -1;
+        let prevSampleInt = -1;
+        let avgDt = -1;          // 프레임 시간 EMA(ms)
+        let lastFrame = performance.now();
+
         const params = {
             // 렌더
             bounces: 6,
             maxSamples: 768,
             resolutionScale: 1.0,
+            targetFPS: 30,              // [최적화] 적응형 타일링 목표 프레임레이트
             filterGlossy: 0.5,          // [최적화] glossy 필터: firefly(노이즈) 억제 → 체감 수렴 빠름
             // 하늘/태양
             envIntensity: 1.0,
@@ -102,7 +110,8 @@
             ptRenderer = new PathTracingRenderer(renderer);
             ptRenderer.camera = camera;
             ptRenderer.material = new PhysicalPathTracingMaterial();
-            ptRenderer.tiles.set(3, 2);
+            ptRenderer.tiles.set(idleGrid, idleGrid);
+            appliedGrid = idleGrid;
             ptRenderer.material.filterGlossyFactor = params.filterGlossy;
 
             ptSceneGenerator = new PathTracingSceneGenerator();
@@ -377,6 +386,7 @@
             const render = gui.addFolder('Render');
             render.add(params, 'bounces', 1, 16, 1).onChange(() => { ptRenderer.bounces = params.bounces; onInteract(); });
             render.add(params, 'maxSamples', 32, 4096, 16);
+            render.add(params, 'targetFPS', 10, 60, 5).name('Target FPS');
             render.add(params, 'resolutionScale', 0.25, 1.0, 0.05).name('Resolution').onChange(onInteract);
             render.add(params, 'filterGlossy', 0, 1, 0.05).name('Glossy Filter')
                   .onChange(() => { ptRenderer.material.filterGlossyFactor = params.filterGlossy; onInteract(); });
@@ -388,39 +398,65 @@
             obj.add(params, 'loadModel').name('Load OBJ/GLTF');
         }
 
+        // 타일 그리드 적용 (값이 바뀔 때만)
+        function setGrid(n) {
+            if (n === appliedGrid) return;
+            appliedGrid = n;
+            ptRenderer.tiles.set(n, n);
+        }
+
+        // 프레임 시간을 보고 목표 fps에 맞게 타일 수 조절 (샘플 경계에서만)
+        function adaptTiles() {
+            const targetMs = 1000 / params.targetFPS;
+            if (avgDt > targetMs * 1.25 && idleGrid < 8) idleGrid++;        // 느림 → 타일 더 잘게
+            else if (avgDt < targetMs * 0.7 && idleGrid > 1) idleGrid--;    // 여유 → 타일 줄여 빨리 수렴
+        }
+
         // ---------- 메인 루프 ----------
         function animate() {
             requestAnimationFrame(animate);
 
+            const now = performance.now();
+            const dt = now - lastFrame;
+            lastFrame = now;
+            avgDt = avgDt < 0 ? dt : avgDt * 0.9 + dt * 0.1;
+
             if (renderNeedsUpdate) { updatePTScene(); renderNeedsUpdate = false; }
 
             // [최적화] 동적 해상도
-            const interacting = (performance.now() - lastInteraction) < 250;
+            const interacting = (now - lastInteraction) < 250;
             const target = interacting ? Math.min(INTERACT_SCALE, params.resolutionScale) : params.resolutionScale;
             applyScale(target);
 
-            const samples = Math.floor(ptRenderer.samples);
+            const sampleInt = Math.floor(ptRenderer.samples);
+            const converged = (!interacting && ptRenderer.samples >= params.maxSamples);
 
-            // [최적화] 수렴 완료 + 정지 상태면 렌더 스킵 (GPU/배터리 절약)
-            if (!interacting && ptRenderer.samples >= params.maxSamples) {
-                if (lastSamples !== samples) {
-                    document.getElementById('samples-info').innerText = `Samples: ${samples} (done)`;
-                    lastSamples = samples;
-                }
-                return;
+            if (interacting) {
+                setGrid(1);  // 드래그 중엔 저해상도 한 장씩 → 반응성 우선
+            } else if (sampleInt !== prevSampleInt) {
+                adaptTiles(); // 샘플 경계에서만 타일 조절 (이음새 방지)
+                setGrid(idleGrid);
             }
+            prevSampleInt = sampleInt;
 
-            camera.updateMatrixWorld();
-            ptRenderer.setCamera(camera);
-            ptRenderer.update();
+            // [최적화] 무거운 path tracing 샘플은 수렴 시 건너뛰되,
+            //          화면 출력(blit)은 항상 수행 → 정지해도 안 사라짐
+            if (!converged) {
+                camera.updateMatrixWorld();
+                ptRenderer.setCamera(camera);
+                ptRenderer.update();
+            }
 
             renderer.setRenderTarget(null);
             renderer.render(displayScene, displayCamera);
 
+            // 정보 표시
+            const samples = sampleInt;
             if (lastSamples !== samples) {
-                const tag = interacting ? ' (preview)' : '';
-                document.getElementById('samples-info').innerText = `Samples: ${samples}${tag}`;
-                lastSamples = samples;
+                const fps = Math.round(1000 / Math.max(avgDt, 1));
+                const tag = converged ? ' · done' : (interacting ? ' · preview' : ` · ${idleGrid}×${idleGrid} tiles`);
+                document.getElementById('samples-info').innerText = `Samples: ${samples} · ${fps}fps${tag}`;
+                lastSamples = converged ? samples : -1;  // 수렴 전엔 매 프레임 fps 갱신
             }
         }
     </script>
