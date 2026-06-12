@@ -6,13 +6,13 @@ import * as THREE from 'three';
 import { OrbitControls } from 'three/addons/controls/OrbitControls.js';
 import { computeBoundsTree, disposeBoundsTree } from 'three-mesh-bvh';
 
-import { state, allEntities, createDefaultEntities, addEntity, markEnvironmentDirty } from './state.js';
-import { makeSkyTexture } from './sky.js';
-import { buildPathTracerScene } from './scene-build.js';
-import { createPathTracerCore, stepFrame, onInteract, onWindowResize } from './renderer-core.js';
-import { createSelection } from './selection.js';
-import { setupGUI } from './gui.js';
-import { loadModelFile } from './loader.js';
+import { state, allEntities, createDefaultEntities, addEntity, markEnvironmentDirty } from './state.js?v=5';
+import { makeSkyTexture } from './sky.js?v=5';
+import { buildPathTracerScene } from './scene-build.js?v=5';
+import { createPathTracerCore, stepFrame, onInteract, onWindowResize } from './renderer-core.js?v=5';
+import { createSelection } from './selection.js?v=5';
+import { setupGUI } from './gui.js?v=5';
+import { loadModelFile } from './loader.js?v=5';
 
 THREE.BufferGeometry.prototype.computeBoundsTree = computeBoundsTree;
 THREE.BufferGeometry.prototype.disposeBoundsTree = disposeBoundsTree;
