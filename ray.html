@@ -66,6 +66,7 @@
         let prevSampleInt = -1;
         let avgDt = -1;          // 프레임 시간 EMA(ms)
         let lastFrame = performance.now();
+        let cullRefreshed = true;  // 마지막 인터랙션 이후 컬링 갱신 완료 여부
 
         const params = {
             // 렌더
@@ -143,6 +144,11 @@
 
             updateEnvironment();                 // 하늘/태양 환경광
             applyScale(params.resolutionScale);  // 초기 렌더 타깃 크기
+
+            // 첫 프레임 전에 카메라 행렬을 패스트레이서에 반영 (안 하면 초기 프레임 레이가 어긋남)
+            camera.updateMatrixWorld();
+            ptRenderer.setCamera(camera);
+
             updatePTScene();                     // 초기 BVH
         }
 
@@ -308,8 +314,29 @@
             const info = document.getElementById('samples-info');
             info.innerText = "Building BVH...";
 
+            // [최적화] 프러스텀 컬링: 카메라 시야 밖 오브젝트는 BVH에서 제외
+            camera.updateMatrixWorld();
+            camera.updateProjectionMatrix();
+            const frustum = new THREE.Frustum();
+            const projScreenMatrix = new THREE.Matrix4()
+                .multiplyMatrices(camera.projectionMatrix, camera.matrixWorldInverse);
+            frustum.setFromProjectionMatrix(projScreenMatrix);
+
             const group = new THREE.Group();
-            sceneMeshes.forEach(m => group.add(m.clone()));
+            const box = new THREE.Box3();
+            let culled = 0;
+            sceneMeshes.forEach(m => {
+                m.updateMatrixWorld(true);
+                box.setFromObject(m);
+                // 바닥처럼 매우 큰 메시는 항상 포함 (그림자/반사 받는 베이스이므로 컬링 제외)
+                const size = box.getSize(new THREE.Vector3());
+                const isLarge = Math.max(size.x, size.y, size.z) > 10;
+                if (isLarge || frustum.intersectsBox(box)) {
+                    group.add(m.clone());
+                } else {
+                    culled++;
+                }
+            });
 
             try {
                 ptSceneGenerator.setObjects(group);
@@ -329,7 +356,7 @@
 
                     ptRenderer.bounces = params.bounces;
                     onInteract();
-                    console.log('✅ BVH 재빌드 완료');
+                    console.log(`✅ BVH 재빌드 완료 (컬링: ${culled}/${sceneMeshes.length})`);
                 } else {
                     info.innerText = "Error: No BVH generated";
                 }
@@ -425,6 +452,14 @@
 
             // [최적화] 동적 해상도
             const interacting = (now - lastInteraction) < 250;
+
+            // [최적화] 인터랙션이 막 끝난 시점에 프러스텀 컬링 갱신 (1회만)
+            if (!interacting && !cullRefreshed) {
+                cullRefreshed = true;
+                updatePTScene();
+            }
+            if (interacting) cullRefreshed = false;
+
             const target = interacting ? Math.min(INTERACT_SCALE, params.resolutionScale) : params.resolutionScale;
             applyScale(target);
 
