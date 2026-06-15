@@ -44,6 +44,12 @@ const helperScene = new THREE.Scene();
 // ---------- 패스트레이서 코어 ----------
 const core = createPathTracerCore(renderer, camera);
 
+// 카메라가 회전/이동/줌될 때마다 누적 버퍼를 리셋해야 한다.
+// 안 하면 이전 카메라 위치에서 쌓인 샘플이 새 위치 화면에 그대로 블렌딩되어
+// "잔상"처럼 남는다 (댐핑 관성으로 멈출 때까지 매 프레임 change가 발생하므로
+// 멈출 때까지 계속 리셋 -> 정지 후 깨끗하게 수렴 시작).
+orbitControls.addEventListener('change', () => onInteract(core));
+
 // ---------- 초기 데이터 ----------
 for (const e of createDefaultEntities()) addEntity(e);
 
