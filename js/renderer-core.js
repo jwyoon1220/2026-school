@@ -44,6 +44,12 @@ export function createPathTracerCore(renderer, camera) {
         avgDt: -1,
         lastFrame: performance.now(),
         wasCompiling: false,
+
+        // [최적화] 프레임당 ptRenderer.update() 호출 수.
+        // 타일 자체는 GPU가 이미 병렬로 그리므로, "더 병렬화"는 사실
+        // 한 프레임에 더 많은 타일(=더 많은 draw call)을 제출하는 것과 같다.
+        // 프레임 시간이 여유 있으면 늘리고, budget을 넘으면 줄인다.
+        updatesPerFrame: 1,
     };
 
     setGrid(core, core.idleGrid);
@@ -78,12 +84,22 @@ export function onInteract(core) {
     core.lastInteraction = performance.now();
     resetPathTracer(core);
     setGrid(core, 1);
+    core.updatesPerFrame = 1;
 }
 
 function adaptTiles(core, targetFPS) {
     const targetMs = 1000 / targetFPS;
     if (core.avgDt > targetMs * 1.25 && core.idleGrid < 16) core.idleGrid++;
     else if (core.avgDt < targetMs * 0.7 && core.idleGrid > 1) core.idleGrid--;
+}
+
+// [최적화] 프레임 시간이 목표보다 여유 있으면 update() 호출 수를 늘려
+// 한 프레임에 더 많은 샘플(타일)을 GPU에 동시에 제출한다.
+// 반대로 budget을 넘으면 줄여서 인터랙션 반응성을 지킨다.
+function adaptThroughput(core, targetFPS) {
+    const targetMs = 1000 / targetFPS;
+    if (core.avgDt < targetMs * 0.6 && core.updatesPerFrame < 8) core.updatesPerFrame++;
+    else if (core.avgDt > targetMs * 1.1 && core.updatesPerFrame > 1) core.updatesPerFrame--;
 }
 
 // 메인 루프 1프레임 실행. onInfo(text)로 상태 문자열을 전달.
@@ -120,8 +136,10 @@ export function stepFrame(core, renderer, camera, params, { rebuildIfDirty, onIn
 
     if (interacting) {
         setGrid(core, 1); // 풀해상도 1샘플/프레임: 가볍고, reset 직후에도 화면 전체가 즉시 채워짐
+        core.updatesPerFrame = 1;
     } else if (sampleInt !== core.prevSampleInt) {
-        adaptTiles(core, params.targetFPS); // 정지 후엔 fps에 맞춰 타일을 늘려 더 많은 샘플 누적
+        adaptTiles(core, params.targetFPS);      // 타일을 늘려 1회 update의 비용을 낮춤
+        adaptThroughput(core, params.targetFPS); // 그 위에서 프레임당 update 횟수를 늘려 처리량 확보
         setGrid(core, core.idleGrid);
     }
     core.prevSampleInt = sampleInt;
@@ -129,14 +147,20 @@ export function stepFrame(core, renderer, camera, params, { rebuildIfDirty, onIn
     if (!converged) {
         camera.updateMatrixWorld();
         core.ptRenderer.setCamera(camera);
-        core.ptRenderer.update();
+
+        const calls = interacting ? 1 : core.updatesPerFrame;
+        for (let i = 0; i < calls; i++) {
+            core.ptRenderer.update();
+            // maxSamples를 넘기면 즉시 중단 (오버슈팅 방지)
+            if (core.ptRenderer.samples >= params.maxSamples) break;
+        }
     }
 
     renderer.setRenderTarget(null);
     renderer.render(core.displayScene, core.displayCamera);
 
     const fps = Math.round(1000 / Math.max(core.avgDt, 1));
-    const tag = converged ? ' · done' : (interacting ? ' · live' : ` · ${core.idleGrid}×${core.idleGrid} tiles`);
+    const tag = converged ? ' · done' : (interacting ? ' · live' : ` · ${core.idleGrid}×${core.idleGrid}t × ${core.updatesPerFrame}`);
 
     // innerText 쓰기는 리플로우를 유발하므로 4Hz로만 갱신
     if (now - (core.lastInfoUpdate || 0) > 250) {
