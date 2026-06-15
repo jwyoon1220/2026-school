@@ -4,7 +4,7 @@
 // dirty 플래그/리셋을 트리거한다. GUI 자체는 데이터를 소유하지 않음.
 // ------------------------------------------------------------
 import GUI from 'lil-gui';
-import { state, addEntity, removeEntity, makeId, markEnvironmentDirty, markGeometryDirty } from './state.js?v=65f641c8';
+import { state, addEntity, removeEntity, makeId, markEnvironmentDirty, markGeometryDirty } from './state.js?v=e7cee95d';
 
 export function setupGUI({ onEnvChange, onInteract, onBouncesChange, onFilterChange, onExposureChange, onRemoveSelected }) {
     const gui = new GUI();

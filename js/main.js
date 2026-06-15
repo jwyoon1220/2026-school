@@ -6,7 +6,7 @@ import * as THREE from 'three';
 import { OrbitControls } from 'three/addons/controls/OrbitControls.js';
 import { computeBoundsTree, disposeBoundsTree } from 'three-mesh-bvh';
 
-import { state, allEntities, createDefaultEntities, addEntity, markEnvironmentDirty } from './state.js?v=65f641c8';
+import { state, allEntities, createDefaultEntities, addEntity, markEnvironmentDirty } from './state.js?v=e7cee95d';
 import { makeSkyTexture } from './sky.js?v=4bcaf188';
 import { buildPathTracerScene } from './scene-build.js?v=cdf1dbd1';
 import { createPathTracerCore, stepFrame, onInteract, onWindowResize } from './renderer-core.js?v=284c18f2';
@@ -22,7 +22,11 @@ const renderer = new THREE.WebGLRenderer({ antialias: false, powerPreference: 'h
 renderer.toneMapping = THREE.ACESFilmicToneMapping;
 renderer.toneMappingExposure = state.params.exposure;
 renderer.setSize(window.innerWidth, window.innerHeight);
-renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
+// [최적화] devicePixelRatio를 그대로 쓰면 레티나(2x)에서 픽셀 수가 4배가 되어
+// 패스트레이싱 비용도 4배가 된다. 노이즈가 있는 패스트레이싱 결과는 1x에서도
+// 체감 품질 차이가 작으므로 1로 고정하고, 세밀한 트레이드오프는
+// GUI의 Resolution 슬라이더(resolutionScale)로 조절하게 한다.
+renderer.setPixelRatio(1);
 document.body.appendChild(renderer.domElement);
 
 const camera = new THREE.PerspectiveCamera(55, window.innerWidth / window.innerHeight, 0.1, 1000);

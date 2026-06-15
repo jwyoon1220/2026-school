@@ -6,7 +6,7 @@
 // ------------------------------------------------------------
 import * as THREE from 'three';
 import { TransformControls } from 'three/addons/controls/TransformControls.js';
-import { state, setTransform } from './state.js?v=65f641c8';
+import { state, setTransform } from './state.js?v=e7cee95d';
 import { entityToMesh, entityBounds } from './scene-build.js?v=cdf1dbd1';
 
 export function createSelection({ renderer, camera, scene, orbitControls, onDragStateChange }) {

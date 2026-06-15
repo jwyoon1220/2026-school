@@ -29,11 +29,16 @@ export const state = {
     },
     params: {
         // 렌더
-        bounces: 6,
-        maxSamples: 768,
+        // [최적화] bounces는 diffuse 경로 깊이만 좌우하고, 유리(transmission) 굴절은
+        // 별도 transmissiveBounces(라이브러리 기본값 5)로 처리되므로 6→4로 낮춰도
+        // 유리 품질엔 영향이 거의 없고 샘플당 비용은 크게 줄어든다.
+        bounces: 4,
+        // [최적화] 768→512: "done" 도달까지 누적 시간을 줄임. 필요하면 슬라이더로 올릴 수 있음.
+        maxSamples: 512,
         resolutionScale: 1.0,
         targetFPS: 30,
-        filterGlossy: 0.5,
+        // [최적화] 0.5→0.65: firefly(밝은 점 노이즈) 억제를 강화 → 같은 샘플 수에서 더 빨리 깨끗해 보임
+        filterGlossy: 0.65,
         exposure: 1.6,
         // 하늘/태양
         envIntensity: 2.0,
