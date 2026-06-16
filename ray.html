@@ -4,12 +4,44 @@
     <meta charset="UTF-8">
     <title>GPU Path Tracer — Sky &amp; Soft Shadows</title>
     <style>
+        * { box-sizing: border-box; }
         body { margin: 0; overflow: hidden; background:#0a0a0c; font-family: ui-sans-serif, system-ui, sans-serif; }
         canvas { display: block; width: 100vw; height: 100vh; }
-        #ui { position: absolute; top: 14px; left: 16px; color:#fff; z-index: 10; pointer-events:none;
-              text-shadow: 0 1px 3px rgba(0,0,0,.6); }
-        #ui h2 { margin:0 0 2px; font-weight:600; letter-spacing:.3px; font-size:18px; }
-        #ui p  { margin:0; font-size:13px; opacity:.85; font-variant-numeric: tabular-nums; }
+
+        /* HUD overlay */
+        #hud {
+            position: absolute; top: 14px; left: 16px; z-index: 10; pointer-events: none;
+            display: flex; flex-direction: column; gap: 4px;
+        }
+        #hud-title {
+            font-size: 15px; font-weight: 700; letter-spacing: .4px; color: #fff;
+            text-shadow: 0 1px 4px rgba(0,0,0,.7);
+        }
+        #hud-stats {
+            display: flex; gap: 10px;
+        }
+        .hud-pill {
+            background: rgba(0,0,0,.45); border: 1px solid rgba(255,255,255,.12);
+            border-radius: 6px; padding: 3px 8px; backdrop-filter: blur(6px);
+            font-size: 12px; color: #e8eaf0; font-variant-numeric: tabular-nums;
+            display: flex; align-items: center; gap: 5px;
+        }
+        .hud-pill .label { opacity: .6; font-size: 10px; text-transform: uppercase; letter-spacing: .5px; }
+        .hud-pill .value { font-weight: 600; }
+        #hud-denoise .value { color: #7dd3fc; }
+        #hud-fps .value { color: #86efac; }
+
+        /* progress bar */
+        #progress-wrap {
+            position: absolute; bottom: 0; left: 0; width: 100%; height: 3px;
+            background: rgba(255,255,255,.07); z-index: 10; pointer-events: none;
+        }
+        #progress-bar {
+            height: 100%; width: 0%;
+            background: linear-gradient(90deg, #2563eb, #06b6d4);
+            transition: width 0.25s ease;
+        }
+
         #file-input { display:none; }
     </style>
 
@@ -27,10 +59,31 @@
     </script>
 </head>
 <body>
-    <div id="ui">
-        <h2>Web GPU Raytracer</h2>
-        <p id="samples-info">Samples: 0</p>
+    <!-- HUD -->
+    <div id="hud">
+        <div id="hud-title">Web GPU Raytracer</div>
+        <div id="hud-stats">
+            <div class="hud-pill" id="hud-samples">
+                <span class="label">SPP</span>
+                <span class="value" id="hud-spp">0</span>
+            </div>
+            <div class="hud-pill" id="hud-fps">
+                <span class="label">FPS</span>
+                <span class="value" id="hud-fps-val">—</span>
+            </div>
+            <div class="hud-pill" id="hud-denoise">
+                <span class="label">Denoise</span>
+                <span class="value" id="hud-denoise-val">—</span>
+            </div>
+            <div class="hud-pill" id="hud-status">
+                <span class="value" id="hud-status-val">init</span>
+            </div>
+        </div>
     </div>
+
+    <!-- progress bar -->
+    <div id="progress-wrap"><div id="progress-bar"></div></div>
+
     <input type="file" id="file-input" accept=".gltf,.glb,.obj" />
 
     <script type="module">
@@ -52,51 +105,128 @@
         let envTex = null;
 
         let sceneMeshes = [];
-        let renderNeedsUpdate = false;   // 지오메트리 변경 시에만 BVH 재빌드
+        let renderNeedsUpdate = false;
         let lastSamples = -1;
 
-        // [최적화] 동적 해상도: 인터랙션 중에는 저해상도로 렌더 → 멈추면 풀해상도로 수렴
-        const INTERACT_SCALE = 0.4;
+        // Dynamic resolution
+        const INTERACT_SCALE = 0.3;
+        const INTERACT_COOLDOWN = 150; // ms
         let currentScale = -1;
         let lastInteraction = -1e9;
 
-        // [최적화] 적응형 타일링: 프레임 시간을 보고 타일 수를 조절해 목표 fps 유지
-        let idleGrid = 2;        // 정지 시 한 축당 타일 수 (n×n 타일로 1샘플을 분할)
+        // Adaptive tiling — tighter range 1..16, with hysteresis
+        let idleGrid = 2;
         let appliedGrid = -1;
         let prevSampleInt = -1;
-        let avgDt = -1;          // 프레임 시간 EMA(ms)
+        let avgDt = -1;
         let lastFrame = performance.now();
         let wasCompiling = false;
 
+        // Resolution ramp: during idle, start at 50% for first 8 samples then ramp up
+        let rampStartTime = -1;
+        let rampSamples = 0;
+        const RAMP_SAMPLE_THRESHOLD = 8;
+        const RAMP_SCALE = 0.5;
+
+        // Denoiser
+        let pingRT = null, pongRT = null;
+        let denoiserScene, denoiserCamera, denoiserMesh;
+        let denoiserMaterial = null;
+        let denoiseEnabled = true;
+
         const params = {
-            // 렌더
             bounces: 6,
-            maxSamples: 768,
+            maxSamples: 512,
             resolutionScale: 1.0,
-            targetFPS: 30,              // [최적화] 적응형 타일링 목표 프레임레이트
-            debugDisableEnv: false,     // 디버그: 커스텀 환경맵 비활성화(기본 환경 사용)
-            filterGlossy: 0.5,          // [최적화] glossy 필터: firefly(노이즈) 억제 → 체감 수렴 빠름
-            // 하늘/태양
+            targetFPS: 30,
+            debugDisableEnv: false,
+            filterGlossy: 0.6,
+            denoiseEnabled: true,
+            // sky/sun
             envIntensity: 2.0,
             skyZenith: '#5e9bd6',
             skyHorizon: '#e8f3ff',
             groundColor: '#4a4540',
             sunColor: '#fff4e0',
-            sunAzimuth: 35,             // 방위각(°) — 그림자 방향
-            sunElevation: 55,           // 고도(°)  — 그림자 길이
-            sunSize: 4.0,               // 태양 각크기(°) — 그림자 부드러움(클수록 soft)
-            sunIntensity: 40.0,         // 태양 밝기
-            // 오브젝트
+            sunAzimuth: 35,
+            sunElevation: 55,
+            sunSize: 4.0,
+            sunIntensity: 40.0,
+            // objects
             addSphere: () => addPrimitive('sphere'),
-            addBox: () => addPrimitive('box'),
-            loadModel: () => document.getElementById('file-input').click()
+            addBox:    () => addPrimitive('box'),
+            loadModel: () => document.getElementById('file-input').click(),
+            // preset
+            preset: 'Balanced'
         };
+
+        const PRESETS = {
+            Fast:     { targetFPS: 60, bounces: 4,  filterGlossy: 0.8 },
+            Balanced: { targetFPS: 30, bounces: 6,  filterGlossy: 0.6 },
+            Quality:  { targetFPS: 15, bounces: 10, filterGlossy: 0.3 }
+        };
+
+        // ---- A-Trous bilateral denoiser GLSL ----
+        const DENOISE_VERT = `
+varying vec2 vUv;
+void main() {
+    vUv = uv;
+    gl_Position = vec4(position.xy, 0.0, 1.0);
+}`;
+
+        const DENOISE_FRAG = `
+precision highp float;
+uniform sampler2D tDiffuse;
+uniform vec2 resolution;
+uniform float strength;    // 0..1
+uniform float stepSize;    // 1, 2, 4
+
+varying vec2 vUv;
+
+float luma(vec3 c) { return dot(c, vec3(0.2126, 0.7152, 0.0722)); }
+
+void main() {
+    vec2 texel = 1.0 / resolution;
+    vec4 center = texture2D(tDiffuse, vUv);
+    float centerLuma = luma(center.rgb);
+
+    // 5x5 A-Trous kernel weights (Gaussian-shaped, only sample at stride stepSize)
+    float kernel[5];
+    kernel[0] = 1.0/16.0;
+    kernel[1] = 4.0/16.0;
+    kernel[2] = 6.0/16.0;
+    kernel[3] = 4.0/16.0;
+    kernel[4] = 1.0/16.0;
+
+    vec4 accum = vec4(0.0);
+    float totalWeight = 0.0;
+
+    for (int j = 0; j < 5; j++) {
+        for (int i = 0; i < 5; i++) {
+            vec2 offset = vec2(float(i - 2), float(j - 2)) * stepSize * texel;
+            vec4 sampleColor = texture2D(tDiffuse, vUv + offset);
+            float sampleLuma = luma(sampleColor.rgb);
+
+            float spatialW = kernel[i] * kernel[j];
+            float lumaDiff = abs(centerLuma - sampleLuma);
+            float rangeW = exp(-lumaDiff * 8.0);
+
+            float w = spatialW * rangeW;
+            accum += sampleColor * w;
+            totalWeight += w;
+        }
+    }
+
+    vec4 filtered = accum / max(totalWeight, 1e-6);
+    // Blend: filtered at strength=1, original at strength=0
+    gl_FragColor = mix(center, filtered, strength);
+}`;
 
         init();
         animate();
 
+        // ============================================================
         function init() {
-            // 렌더러
             renderer = new THREE.WebGLRenderer({ antialias: false, powerPreference: "high-performance" });
             renderer.toneMapping = THREE.ACESFilmicToneMapping;
             renderer.toneMappingExposure = 1.6;
@@ -104,11 +234,9 @@
             renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
             document.body.appendChild(renderer.domElement);
 
-            // 카메라
             camera = new THREE.PerspectiveCamera(55, window.innerWidth / window.innerHeight, 0.1, 1000);
             camera.position.set(6, 4.5, 9);
 
-            // 패스트레이서
             ptRenderer = new PathTracingRenderer(renderer);
             ptRenderer.camera = camera;
             ptRenderer.material = new PhysicalPathTracingMaterial();
@@ -119,21 +247,17 @@
             ptSceneGenerator = new PathTracingSceneGenerator();
             ptSceneGenerator.generateBVH = true;
 
-            // 컨트롤
             orbitControls = new OrbitControls(camera, renderer.domElement);
             orbitControls.target.set(0, 1.2, 0);
             orbitControls.update();
             orbitControls.addEventListener('change', onInteract);
 
-            // 기본 씬 (예쁜 데모 장면)
             buildDefaultScene();
-
-            // GUI / 이벤트
             setupGUI();
             document.getElementById('file-input').addEventListener('change', handleFileUpload);
             window.addEventListener('resize', onWindowResize);
 
-            // 화면 표시용 풀스크린 쿼드
+            // Display quad
             displayCamera = new THREE.OrthographicCamera(-1, 1, 1, -1, 0, 1);
             displayScene = new THREE.Scene();
             displayMesh = new THREE.Mesh(
@@ -143,19 +267,34 @@
             displayMesh.frustumCulled = false;
             displayScene.add(displayMesh);
 
-            updateEnvironment();                 // 하늘/태양 환경광
-            applyScale(params.resolutionScale);  // 초기 렌더 타깃 크기
+            // Denoiser fullscreen quad (separate scene/camera reused above)
+            denoiserCamera = new THREE.OrthographicCamera(-1, 1, 1, -1, 0, 1);
+            denoiserScene  = new THREE.Scene();
+            denoiserMaterial = new THREE.ShaderMaterial({
+                vertexShader:   DENOISE_VERT,
+                fragmentShader: DENOISE_FRAG,
+                uniforms: {
+                    tDiffuse:   { value: null },
+                    resolution: { value: new THREE.Vector2(1, 1) },
+                    strength:   { value: 1.0 },
+                    stepSize:   { value: 1.0 }
+                },
+                depthTest: false, depthWrite: false
+            });
+            denoiserMesh = new THREE.Mesh(new THREE.PlaneGeometry(2, 2), denoiserMaterial);
+            denoiserMesh.frustumCulled = false;
+            denoiserScene.add(denoiserMesh);
 
-            // 첫 프레임 전에 카메라 행렬을 패스트레이서에 반영 (안 하면 초기 프레임 레이가 어긋남)
+            updateEnvironment();
+            applyScale(params.resolutionScale);
+
             camera.updateMatrixWorld();
             ptRenderer.setCamera(camera);
-
-            updatePTScene();                     // 초기 BVH
+            updatePTScene();
         }
 
-        // ---------- 기본 장면 ----------
+        // ---- default scene ----
         function buildDefaultScene() {
-            // 바닥: 살짝 거친 유전체 → 하늘을 부드럽게 반사
             const floor = new THREE.Mesh(
                 new THREE.BoxGeometry(40, 0.2, 40),
                 new THREE.MeshStandardMaterial({ color: 0xb8b8bc, roughness: 0.08, metalness: 0.0 })
@@ -163,28 +302,22 @@
             floor.position.y = -0.1;
             sceneMeshes.push(floor);
 
-            // 거울 구
             sceneMeshes.push(makeMesh(
                 new THREE.SphereGeometry(1.3, 48, 48),
                 new THREE.MeshStandardMaterial({ color: 0xffffff, metalness: 1.0, roughness: 0.02 }),
                 -3.2, 1.3, 0
             ));
-
-            // 금속(골드) 구
             sceneMeshes.push(makeMesh(
                 new THREE.SphereGeometry(1.3, 48, 48),
                 new THREE.MeshStandardMaterial({ color: 0xffc864, metalness: 1.0, roughness: 0.18 }),
                 0, 1.3, -1.5
             ));
 
-            // 유리 구 (투과 — path tracer가 굴절/투명 처리)
             const glass = new THREE.MeshPhysicalMaterial({
                 color: 0xffffff, metalness: 0.0, roughness: 0.0,
                 transmission: 1.0, ior: 1.5, thickness: 1.4
             });
             sceneMeshes.push(makeMesh(new THREE.SphereGeometry(1.3, 48, 48), glass, 3.2, 1.3, 0));
-
-            // 컬러 러프 박스
             sceneMeshes.push(makeMesh(
                 new THREE.BoxGeometry(1.8, 1.8, 1.8),
                 new THREE.MeshStandardMaterial({ color: 0x2f9e8f, roughness: 0.55, metalness: 0.0 }),
@@ -198,10 +331,8 @@
             return m;
         }
 
-        // ---------- 절차적 하늘 환경맵 ----------
-        // equirect Float 텍스처를 직접 만들어 envMapInfo에 주입. 태양 디스크가 importance sampling되어
-        // 소프트 섀도를 만든다 (디스크 각크기 = 그림자 부드러움).
-        function makeSkyTexture(W = 256, H = 128) {
+        // ---- improved sky texture 512x256 with atmospheric scattering ----
+        function makeSkyTexture(W = 512, H = 256) {
             const data = new Float32Array(W * H * 4);
 
             const az = THREE.MathUtils.degToRad(params.sunAzimuth);
@@ -216,50 +347,83 @@
             const hor = new THREE.Color(params.skyHorizon);
             const grd = new THREE.Color(params.groundColor);
             const sunCol = new THREE.Color(params.sunColor);
-            const cosSize = Math.cos(THREE.MathUtils.degToRad(params.sunSize));
+            const sunHalfAngle = THREE.MathUtils.degToRad(params.sunSize * 0.5);
+            const cosSize = Math.cos(sunHalfAngle);
+            // slightly wider for penumbra
+            const cosSoft = Math.cos(sunHalfAngle * 1.35);
 
             for (let y = 0; y < H; y++) {
-                const v = (y + 0.5) / H;          // 0(위) → 1(아래)
+                const v = (y + 0.5) / H;
                 const theta = v * Math.PI;
-                const cy = Math.cos(theta);       // +1 위 → -1 아래
+                const cy = Math.cos(theta);  // +1 top, -1 bottom
                 const sy = Math.sin(theta);
+
                 for (let x = 0; x < W; x++) {
-                    const phi = ((x + 0.5) / W) * 2 * Math.PI;
+                    const phi = ((x + 0.5) / W) * 2.0 * Math.PI;
                     const dx = sy * Math.sin(phi);
                     const dz = sy * Math.cos(phi);
 
                     let r, g, b;
-                    if (cy >= 0) {
-                        const t = Math.pow(cy, 0.5);            // 수평선→천정 그라디언트
+
+                    if (cy >= -0.02) {
+                        // sky hemisphere
+                        // atmospheric scattering: zenith-to-horizon blend with pow shaping
+                        const t = Math.pow(Math.max(cy, 0.0), 0.45);
                         r = hor.r * (1 - t) + zen.r * t;
                         g = hor.g * (1 - t) + zen.g * t;
                         b = hor.b * (1 - t) + zen.b * t;
+
+                        // limb darkening on sky: slightly darker near horizon edges
+                        const limbFactor = 0.85 + 0.15 * t;
+                        r *= limbFactor; g *= limbFactor; b *= limbFactor;
+
+                        // horizon haze band — a warm/bright strip just above the horizon
+                        const horizonBand = Math.exp(-cy * cy * 120.0) * 0.25;
+                        r += hor.r * horizonBand * 1.4;
+                        g += hor.g * horizonBand * 1.2;
+                        b += hor.b * horizonBand;
                     } else {
-                        r = grd.r; g = grd.g; b = grd.b;
+                        // ground, with gentle fade from horizon
+                        const fade = Math.min((-cy) * 8.0, 1.0);
+                        r = hor.r * (1 - fade) + grd.r * fade;
+                        g = hor.g * (1 - fade) + grd.g * fade;
+                        b = hor.b * (1 - fade) + grd.b * fade;
                     }
 
-                    const d = dx * sun.x + cy * sun.y + dz * sun.z;  // 시선·태양 내적
-                    if (d > cosSize) {
-                        r += sunCol.r * params.sunIntensity;
-                        g += sunCol.g * params.sunIntensity;
-                        b += sunCol.b * params.sunIntensity;
+                    // sun disk with limb darkening
+                    const dot = dx * sun.x + cy * sun.y + dz * sun.z;
+                    if (dot > cosSoft) {
+                        let sunStrength;
+                        if (dot > cosSize) {
+                            // inside disk — limb darkening: center bright, edge dim
+                            const u = (dot - cosSize) / (1.0 - cosSize);  // 0=edge 1=center
+                            const limbDark = 0.4 + 0.6 * Math.sqrt(u);
+                            sunStrength = params.sunIntensity * limbDark;
+                        } else {
+                            // penumbra
+                            const t2 = (dot - cosSoft) / (cosSize - cosSoft);
+                            sunStrength = params.sunIntensity * 0.4 * t2 * t2;
+                        }
+                        r += sunCol.r * sunStrength;
+                        g += sunCol.g * sunStrength;
+                        b += sunCol.b * sunStrength;
                     }
 
                     const i = (y * W + x) * 4;
-                    data[i] = r; data[i + 1] = g; data[i + 2] = b; data[i + 3] = 1;
+                    data[i] = r; data[i+1] = g; data[i+2] = b; data[i+3] = 1.0;
                 }
             }
 
             const tex = new THREE.DataTexture(data, W, H, THREE.RGBAFormat, THREE.FloatType);
-            tex.mapping = THREE.EquirectangularReflectionMapping;
-            tex.minFilter = THREE.LinearFilter;
-            tex.magFilter = THREE.LinearFilter;
+            tex.mapping    = THREE.EquirectangularReflectionMapping;
+            tex.minFilter  = THREE.LinearFilter;
+            tex.magFilter  = THREE.LinearFilter;
             tex.generateMipmaps = false;
-            tex.wrapS = THREE.RepeatWrapping;
-            tex.wrapT = THREE.ClampToEdgeWrapping;
+            tex.wrapS      = THREE.RepeatWrapping;
+            tex.wrapT      = THREE.ClampToEdgeWrapping;
             tex.colorSpace = THREE.NoColorSpace;
             tex.needsUpdate = true;
-            renderer.initTexture(tex); // updateFrom이 픽셀을 읽기 전에 GPU 업로드 보장
+            renderer.initTexture(tex);
             return tex;
         }
 
@@ -267,13 +431,74 @@
             if (envTex) envTex.dispose();
             envTex = makeSkyTexture();
             if (!params.debugDisableEnv) {
-                ptRenderer.material.envMapInfo.updateFrom(envTex);   // CDF 재생성(하늘+태양)
+                ptRenderer.material.envMapInfo.updateFrom(envTex);
             }
             ptRenderer.material.environmentIntensity = params.envIntensity;
             onInteract();
         }
 
-        // ---------- 오브젝트 추가/로드 (지오메트리 변경 → 재빌드) ----------
+        // ---- denoiser render targets ----
+        function resizeDenoiser(w, h) {
+            if (pingRT) pingRT.dispose();
+            if (pongRT) pongRT.dispose();
+            const opts = {
+                format: THREE.RGBAFormat,
+                type: THREE.HalfFloatType,
+                minFilter: THREE.LinearFilter,
+                magFilter: THREE.LinearFilter,
+                depthBuffer: false,
+                stencilBuffer: false
+            };
+            pingRT = new THREE.WebGLRenderTarget(w, h, opts);
+            pongRT = new THREE.WebGLRenderTarget(w, h, opts);
+        }
+
+        // Compute denoiser strength: 1.0 at 1 sample → 0.0 at ~128 samples
+        function denoiseStrength(samples) {
+            if (!params.denoiseEnabled) return 0.0;
+            const s = Math.max(samples, 1);
+            return Math.max(0.0, 1.0 - Math.log2(s) / 7.0);  // log2(128)=7
+        }
+
+        // Run 3-pass A-Trous denoiser, writing final result into displayMesh's texture
+        function applyDenoiser(samples) {
+            const str = denoiseStrength(samples);
+            if (str < 0.005) {
+                // denoiser inactive — display raw PT output
+                displayMesh.material.map = ptRenderer.target.texture;
+                displayMesh.material.needsUpdate = true;
+                return;
+            }
+
+            const w = pingRT.width;
+            const h = pingRT.height;
+            denoiserMaterial.uniforms.resolution.value.set(w, h);
+            denoiserMaterial.uniforms.strength.value = str;
+
+            // Pass 1: ptRenderer.target → ping (stepSize=1)
+            denoiserMaterial.uniforms.tDiffuse.value = ptRenderer.target.texture;
+            denoiserMaterial.uniforms.stepSize.value = 1.0;
+            renderer.setRenderTarget(pingRT);
+            renderer.render(denoiserScene, denoiserCamera);
+
+            // Pass 2: ping → pong (stepSize=2)
+            denoiserMaterial.uniforms.tDiffuse.value = pingRT.texture;
+            denoiserMaterial.uniforms.stepSize.value = 2.0;
+            renderer.setRenderTarget(pongRT);
+            renderer.render(denoiserScene, denoiserCamera);
+
+            // Pass 3: pong → ping (stepSize=4)
+            denoiserMaterial.uniforms.tDiffuse.value = pongRT.texture;
+            denoiserMaterial.uniforms.stepSize.value = 4.0;
+            renderer.setRenderTarget(pingRT);
+            renderer.render(denoiserScene, denoiserCamera);
+
+            // Display the final denoised ping
+            displayMesh.material.map = pingRT.texture;
+            displayMesh.material.needsUpdate = true;
+        }
+
+        // ---- primitives / file upload ----
         function addPrimitive(type) {
             const geo = type === 'sphere'
                 ? new THREE.SphereGeometry(1, 40, 40)
@@ -297,9 +522,9 @@
 
             const onLoad = (object) => {
                 const model = object.scene || object;
-                const box = new THREE.Box3().setFromObject(model);
+                const box   = new THREE.Box3().setFromObject(model);
                 const center = box.getCenter(new THREE.Vector3());
-                const size = box.getSize(new THREE.Vector3());
+                const size   = box.getSize(new THREE.Vector3());
                 const maxDim = Math.max(size.x, size.y, size.z);
                 model.scale.setScalar(5 / maxDim);
                 model.position.sub(center.multiplyScalar(5 / maxDim));
@@ -316,15 +541,13 @@
             };
 
             if (ext === 'gltf' || ext === 'glb') new GLTFLoader().load(url, onLoad);
-            else if (ext === 'obj') new OBJLoader().load(url, onLoad);
+            else if (ext === 'obj')               new OBJLoader().load(url, onLoad);
         }
 
-        // ---------- BVH 빌드 (지오메트리 변경 시에만) ----------
+        // ---- BVH build ----
         function updatePTScene() {
-            const info = document.getElementById('samples-info');
-            info.innerText = "Building BVH...";
+            document.getElementById('hud-status-val').innerText = 'Building BVH…';
 
-            // [최적화] 프러스텀 컬링: 카메라 시야 밖 오브젝트는 BVH에서 제외
             camera.updateMatrixWorld();
             camera.updateProjectionMatrix();
             const frustum = new THREE.Frustum();
@@ -333,13 +556,12 @@
             frustum.setFromProjectionMatrix(projScreenMatrix);
 
             const group = new THREE.Group();
-            const box = new THREE.Box3();
-            let culled = 0;
+            const box   = new THREE.Box3();
+            let culled  = 0;
             sceneMeshes.forEach(m => {
                 m.updateMatrixWorld(true);
                 box.setFromObject(m);
-                // 바닥처럼 매우 큰 메시는 항상 포함 (그림자/반사 받는 베이스이므로 컬링 제외)
-                const size = box.getSize(new THREE.Vector3());
+                const size  = box.getSize(new THREE.Vector3());
                 const isLarge = Math.max(size.x, size.y, size.z) > 10;
                 if (isLarge || frustum.intersectsBox(box)) {
                     group.add(m.clone());
@@ -357,30 +579,33 @@
                     material.bvh.updateFrom(bvh);
                     material.attributesArray.updateFrom(
                         geometry.attributes.normal, geometry.attributes.tangent,
-                        geometry.attributes.uv, geometry.attributes.color
+                        geometry.attributes.uv,     geometry.attributes.color
                     );
                     material.materialIndexAttribute.updateFrom(geometry.attributes.materialIndex);
                     material.textures.setTextures(renderer, textures, 1024, 1024);
                     material.materials.updateFrom(materials, textures);
-                    material.lights.updateFrom([], iesTextures || []);  // 조명은 하늘(env)이 담당
+                    material.lights.updateFrom([], iesTextures || []);
 
                     ptRenderer.bounces = params.bounces;
                     onInteract();
-                    console.log(`✅ BVH 재빌드 완료 (컬링: ${culled}/${sceneMeshes.length})`);
                 } else {
-                    info.innerText = "Error: No BVH generated";
+                    document.getElementById('hud-status-val').innerText = 'BVH error';
                 }
             } catch (e) {
-                console.error('❌ BVH 오류:', e);
-                info.innerText = "Error: " + e.message;
+                console.error('BVH error:', e);
+                document.getElementById('hud-status-val').innerText = 'Error: ' + e.message;
             }
         }
 
-        // ---------- 해상도/리셋 ----------
+        // ---- resolution / reset ----
         function applyScale(s) {
             if (Math.abs(s - currentScale) < 1e-4) return;
             currentScale = s;
-            ptRenderer.setSize(Math.ceil(window.innerWidth * s), Math.ceil(window.innerHeight * s));
+            const w = Math.ceil(window.innerWidth  * s);
+            const h = Math.ceil(window.innerHeight * s);
+            ptRenderer.setSize(w, h);
+            resizeDenoiser(w, h);
+            // re-attach raw texture; applyDenoiser will switch it if needed
             displayMesh.material.map = ptRenderer.target.texture;
             displayMesh.material.needsUpdate = true;
             resetPathTracer();
@@ -389,9 +614,10 @@
         function resetPathTracer() {
             ptRenderer.reset();
             lastSamples = -1;
+            rampStartTime = performance.now();
+            rampSamples   = 0;
         }
 
-        // 인터랙션 발생 표시 → 저해상도 프리뷰 + 누적 리셋
         function onInteract() {
             lastInteraction = performance.now();
             resetPathTracer();
@@ -401,13 +627,32 @@
             camera.aspect = window.innerWidth / window.innerHeight;
             camera.updateProjectionMatrix();
             renderer.setSize(window.innerWidth, window.innerHeight);
-            currentScale = -1;   // 다음 프레임에 스케일 재적용
+            currentScale = -1;
             onInteract();
         }
 
-        // ---------- GUI ----------
+        // ---- GUI ----
+        function applyPreset(name) {
+            const p = PRESETS[name];
+            if (!p) return;
+            params.targetFPS   = p.targetFPS;
+            params.bounces     = p.bounces;
+            params.filterGlossy = p.filterGlossy;
+            ptRenderer.material.filterGlossyFactor = params.filterGlossy;
+            // Refresh GUI controllers
+            for (const ctrl of gui.controllersRecursive()) ctrl.updateDisplay();
+            onInteract();
+        }
+
+        let gui;
         function setupGUI() {
-            const gui = new GUI();
+            gui = new GUI();
+
+            // Preset selector
+            const presetFolder = gui.addFolder('Preset');
+            presetFolder.add(params, 'preset', Object.keys(PRESETS)).name('Quality Preset')
+                .onChange(v => applyPreset(v));
+            presetFolder.open();
 
             const sun = gui.addFolder('Sun & Sky');
             sun.add(params, 'sunAzimuth', 0, 360, 1).name('Sun Azimuth').onChange(updateEnvironment);
@@ -429,6 +674,10 @@
             render.add(params, 'filterGlossy', 0, 1, 0.05).name('Glossy Filter')
                   .onChange(() => { ptRenderer.material.filterGlossyFactor = params.filterGlossy; onInteract(); });
             render.add(renderer, 'toneMappingExposure', 0.2, 2.0, 0.05).name('Exposure').onChange(onInteract);
+            render.add(params, 'denoiseEnabled').name('A-Trous Denoise').onChange(v => {
+                denoiseEnabled = v;
+                onInteract();
+            });
 
             const obj = gui.addFolder('Objects');
             obj.add(params, 'addSphere').name('Add Sphere');
@@ -436,83 +685,124 @@
             obj.add(params, 'loadModel').name('Load OBJ/GLTF');
         }
 
-        // 타일 그리드 적용 (값이 바뀔 때만)
+        // ---- tiling ----
         function setGrid(n) {
             if (n === appliedGrid) return;
             appliedGrid = n;
             ptRenderer.tiles.set(n, n);
         }
 
-        // 프레임 시간을 보고 목표 fps에 맞게 타일 수 조절 (샘플 경계에서만)
+        // Smarter adaptive tiles: range 1..16, hysteresis to avoid oscillation
+        const TILE_MAX = 16;
+        const TILE_MIN = 1;
+        let hysteresisUp   = 0;  // consecutive frames over budget
+        let hysteresisDown = 0;  // consecutive frames under budget
+
         function adaptTiles() {
             const targetMs = 1000 / params.targetFPS;
-            if (avgDt > targetMs * 1.25 && idleGrid < 8) idleGrid++;        // 느림 → 타일 더 잘게
-            else if (avgDt < targetMs * 0.7 && idleGrid > 1) idleGrid--;    // 여유 → 타일 줄여 빨리 수렴
+            if (avgDt > targetMs * 1.15) {
+                hysteresisUp++;  hysteresisDown = 0;
+                if (hysteresisUp >= 2 && idleGrid < TILE_MAX) { idleGrid++; hysteresisUp = 0; }
+            } else if (avgDt < targetMs * 0.75) {
+                hysteresisDown++; hysteresisUp = 0;
+                if (hysteresisDown >= 3 && idleGrid > TILE_MIN) { idleGrid--; hysteresisDown = 0; }
+            } else {
+                hysteresisUp = 0; hysteresisDown = 0;
+            }
         }
 
-        // ---------- 메인 루프 ----------
+        // ---- main loop ----
         function animate() {
             requestAnimationFrame(animate);
 
             const now = performance.now();
-            const dt = now - lastFrame;
+            const dt  = now - lastFrame;
             lastFrame = now;
             avgDt = avgDt < 0 ? dt : avgDt * 0.9 + dt * 0.1;
 
             if (renderNeedsUpdate) { updatePTScene(); renderNeedsUpdate = false; }
 
-            // [버그 수정] PhysicalPathTracingMaterial은 비동기로 컴파일된다.
-            // 컴파일 완료 전에 update()를 호출하면 빈/이전 타깃이 그려져
-            // "벽 + 검은 점" 같은 깨진 화면이 나온다. isCompiling이 끝날 때까지 대기.
             const materialReady = !ptRenderer.material.isCompiling;
             if (!materialReady) {
                 wasCompiling = true;
-                document.getElementById('samples-info').innerText = 'Compiling shader...';
+                document.getElementById('hud-status-val').innerText = 'Compiling…';
                 renderer.setRenderTarget(null);
-                renderer.render(displayScene, displayCamera); // 직전 유효 프레임 유지
+                renderer.render(displayScene, displayCamera);
                 return;
             }
             if (wasCompiling) {
                 wasCompiling = false;
-                resetPathTracer(); // 컴파일 중 누적된 잘못된 샘플 폐기
+                resetPathTracer();
             }
 
-            // [최적화] 동적 해상도
-            const interacting = (now - lastInteraction) < 250;
+            const interacting = (now - lastInteraction) < INTERACT_COOLDOWN;
+            const sampleInt   = Math.floor(ptRenderer.samples);
+            const converged   = (!interacting && sampleInt >= params.maxSamples);
 
-            const target = interacting ? Math.min(INTERACT_SCALE, params.resolutionScale) : params.resolutionScale;
-            applyScale(target);
-
-            const sampleInt = Math.floor(ptRenderer.samples);
-            const converged = (!interacting && ptRenderer.samples >= params.maxSamples);
-
+            // --- Dynamic resolution with ramp ---
+            let targetScale;
             if (interacting) {
-                setGrid(1);  // 드래그 중엔 저해상도 한 장씩 → 반응성 우선
+                targetScale = Math.min(INTERACT_SCALE, params.resolutionScale);
+            } else {
+                // Resolution ramp: first RAMP_SAMPLE_THRESHOLD samples at RAMP_SCALE
+                if (sampleInt < RAMP_SAMPLE_THRESHOLD) {
+                    targetScale = Math.min(RAMP_SCALE, params.resolutionScale);
+                } else {
+                    targetScale = params.resolutionScale;
+                }
+            }
+            applyScale(targetScale);
+
+            // --- Progressive bounces: lower bounces for early samples ---
+            if (!interacting) {
+                const bouncesNow = sampleInt < 16 ? Math.min(2, params.bounces) : params.bounces;
+                if (ptRenderer.bounces !== bouncesNow) ptRenderer.bounces = bouncesNow;
+            } else {
+                ptRenderer.bounces = params.bounces;
+            }
+
+            // --- Tiling ---
+            if (interacting) {
+                setGrid(1);
             } else if (sampleInt !== prevSampleInt) {
-                adaptTiles(); // 샘플 경계에서만 타일 조절 (이음새 방지)
+                adaptTiles();
                 setGrid(idleGrid);
             }
             prevSampleInt = sampleInt;
 
-            // [최적화] 무거운 path tracing 샘플은 수렴 시 건너뛰되,
-            //          화면 출력(blit)은 항상 수행 → 정지해도 안 사라짐
+            // --- Path trace ---
             if (!converged) {
                 camera.updateMatrixWorld();
                 ptRenderer.setCamera(camera);
                 ptRenderer.update();
             }
 
+            // --- Denoise ---
+            const samples = Math.floor(ptRenderer.samples);
+            applyDenoiser(samples);
+
+            // --- Display ---
             renderer.setRenderTarget(null);
             renderer.render(displayScene, displayCamera);
 
-            // 정보 표시
-            const samples = sampleInt;
-            if (lastSamples !== samples) {
-                const fps = Math.round(1000 / Math.max(avgDt, 1));
-                const tag = converged ? ' · done' : (interacting ? ' · preview' : ` · ${idleGrid}×${idleGrid} tiles`);
-                document.getElementById('samples-info').innerText = `Samples: ${samples} · ${fps}fps${tag}`;
-                lastSamples = converged ? samples : -1;  // 수렴 전엔 매 프레임 fps 갱신
-            }
+            // --- HUD update ---
+            const fps     = Math.round(1000 / Math.max(avgDt, 1));
+            const str     = denoiseStrength(samples);
+            const strPct  = Math.round(str * 100);
+
+            document.getElementById('hud-spp').innerText         = samples;
+            document.getElementById('hud-fps-val').innerText     = fps;
+            document.getElementById('hud-denoise-val').innerText = params.denoiseEnabled ? strPct + '%' : 'off';
+
+            let statusText;
+            if (converged)    statusText = 'done';
+            else if (interacting) statusText = 'preview';
+            else              statusText = `${idleGrid}×${idleGrid} tiles`;
+            document.getElementById('hud-status-val').innerText = statusText;
+
+            // Progress bar
+            const pct = Math.min((samples / params.maxSamples) * 100, 100);
+            document.getElementById('progress-bar').style.width = pct + '%';
         }
     </script>
 </body>
