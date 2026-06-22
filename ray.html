@@ -2,808 +2,726 @@
 <html lang="ko">
 <head>
     <meta charset="UTF-8">
-    <title>GPU Path Tracer — Sky &amp; Soft Shadows</title>
+    <title>Path Tracer</title>
     <style>
         * { box-sizing: border-box; }
-        body { margin: 0; overflow: hidden; background:#0a0a0c; font-family: ui-sans-serif, system-ui, sans-serif; }
+        body { margin: 0; overflow: hidden; background: #09090b; font-family: ui-sans-serif, system-ui, sans-serif; }
         canvas { display: block; width: 100vw; height: 100vh; }
 
-        /* HUD overlay */
         #hud {
-            position: absolute; top: 14px; left: 16px; z-index: 10; pointer-events: none;
-            display: flex; flex-direction: column; gap: 4px;
+            position: absolute; top: 14px; left: 16px; z-index: 10;
+            pointer-events: none; display: flex; flex-direction: column; gap: 5px;
         }
-        #hud-title {
-            font-size: 15px; font-weight: 700; letter-spacing: .4px; color: #fff;
-            text-shadow: 0 1px 4px rgba(0,0,0,.7);
+        #hud-title { font-size: 14px; font-weight: 700; color: #fff; letter-spacing: .3px;
+                     text-shadow: 0 1px 4px rgba(0,0,0,.8); }
+        #hud-row { display: flex; gap: 5px; flex-wrap: wrap; }
+        .chip {
+            background: rgba(8,8,12,.65); border: 1px solid rgba(255,255,255,.1);
+            backdrop-filter: blur(8px); border-radius: 5px; padding: 3px 9px;
+            font-size: 11px; color: #d4d8e8; font-variant-numeric: tabular-nums;
+            display: flex; align-items: center; gap: 4px;
         }
-        #hud-stats {
-            display: flex; gap: 10px;
-        }
-        .hud-pill {
-            background: rgba(0,0,0,.45); border: 1px solid rgba(255,255,255,.12);
-            border-radius: 6px; padding: 3px 8px; backdrop-filter: blur(6px);
-            font-size: 12px; color: #e8eaf0; font-variant-numeric: tabular-nums;
-            display: flex; align-items: center; gap: 5px;
-        }
-        .hud-pill .label { opacity: .6; font-size: 10px; text-transform: uppercase; letter-spacing: .5px; }
-        .hud-pill .value { font-weight: 600; }
-        #hud-denoise .value { color: #7dd3fc; }
-        #hud-fps .value { color: #86efac; }
+        .chip .k { opacity: .5; font-size: 9px; text-transform: uppercase; letter-spacing: .6px; }
+        .chip .v { font-weight: 600; }
+        .v.g { color: #4ade80; }
+        .v.b { color: #60a5fa; }
+        .v.a { color: #fbbf24; }
 
-        /* progress bar */
-        #progress-wrap {
-            position: absolute; bottom: 0; left: 0; width: 100%; height: 3px;
-            background: rgba(255,255,255,.07); z-index: 10; pointer-events: none;
-        }
-        #progress-bar {
-            height: 100%; width: 0%;
-            background: linear-gradient(90deg, #2563eb, #06b6d4);
-            transition: width 0.25s ease;
-        }
-
-        #file-input { display:none; }
+        #prog-wrap { position: absolute; bottom: 0; left: 0; right: 0; height: 3px;
+                     background: rgba(255,255,255,.06); z-index: 10; pointer-events: none; }
+        #prog-bar  { height: 100%; width: 0%;
+                     background: linear-gradient(90deg,#3b82f6,#06b6d4);
+                     transition: width .3s ease; }
+        #file-input { display: none; }
     </style>
 
     <script type="importmap">
-        {
-            "imports": {
-                "three": "https://unpkg.com/three@0.160.0/build/three.module.js",
-                "three/addons/": "https://unpkg.com/three@0.160.0/examples/jsm/",
-                "three/examples/jsm/": "https://unpkg.com/three@0.160.0/examples/jsm/",
-                "three-mesh-bvh": "https://unpkg.com/three-mesh-bvh@0.7.0/build/index.module.js",
-                "three-gpu-pathtracer": "https://unpkg.com/three-gpu-pathtracer@0.0.21/build/index.module.js",
-                "lil-gui": "https://unpkg.com/lil-gui@0.19.1/dist/lil-gui.esm.min.js"
-            }
+    {
+        "imports": {
+            "three":                  "https://unpkg.com/three@0.160.0/build/three.module.js",
+            "three/addons/":          "https://unpkg.com/three@0.160.0/examples/jsm/",
+            "three/examples/jsm/":    "https://unpkg.com/three@0.160.0/examples/jsm/",
+            "three-mesh-bvh":         "https://unpkg.com/three-mesh-bvh@0.7.0/build/index.module.js",
+            "three-gpu-pathtracer":   "https://unpkg.com/three-gpu-pathtracer@0.0.21/build/index.module.js",
+            "lil-gui":                "https://unpkg.com/lil-gui@0.19.1/dist/lil-gui.esm.min.js"
         }
+    }
     </script>
 </head>
 <body>
-    <!-- HUD -->
     <div id="hud">
-        <div id="hud-title">Web GPU Raytracer</div>
-        <div id="hud-stats">
-            <div class="hud-pill" id="hud-samples">
-                <span class="label">SPP</span>
-                <span class="value" id="hud-spp">0</span>
-            </div>
-            <div class="hud-pill" id="hud-fps">
-                <span class="label">FPS</span>
-                <span class="value" id="hud-fps-val">—</span>
-            </div>
-            <div class="hud-pill" id="hud-denoise">
-                <span class="label">Denoise</span>
-                <span class="value" id="hud-denoise-val">—</span>
-            </div>
-            <div class="hud-pill" id="hud-status">
-                <span class="value" id="hud-status-val">init</span>
-            </div>
+        <div id="hud-title">Web Path Tracer</div>
+        <div id="hud-row">
+            <div class="chip"><span class="k">SPP</span><span class="v g" id="v-spp">0</span></div>
+            <div class="chip"><span class="k">FPS</span><span class="v g" id="v-fps">—</span></div>
+            <div class="chip"><span class="k">RES</span><span class="v b" id="v-res">—</span></div>
+            <div class="chip"><span class="k">Denoise</span><span class="v b" id="v-dn">—</span></div>
+            <div class="chip"><span class="v a" id="v-st">init</span></div>
         </div>
     </div>
-
-    <!-- progress bar -->
-    <div id="progress-wrap"><div id="progress-bar"></div></div>
-
+    <div id="prog-wrap"><div id="prog-bar"></div></div>
     <input type="file" id="file-input" accept=".gltf,.glb,.obj" />
 
     <script type="module">
-        import * as THREE from 'three';
-        import { OrbitControls } from 'three/addons/controls/OrbitControls.js';
-        import { GLTFLoader } from 'three/addons/loaders/GLTFLoader.js';
-        import { OBJLoader } from 'three/addons/loaders/OBJLoader.js';
-        import GUI from 'lil-gui';
-        import { computeBoundsTree, disposeBoundsTree } from 'three-mesh-bvh';
-        import { PathTracingRenderer, PhysicalPathTracingMaterial, PathTracingSceneGenerator } from 'three-gpu-pathtracer';
+import * as THREE from 'three';
+import { OrbitControls }   from 'three/addons/controls/OrbitControls.js';
+import { GLTFLoader }      from 'three/addons/loaders/GLTFLoader.js';
+import { OBJLoader }       from 'three/addons/loaders/OBJLoader.js';
+import GUI                 from 'lil-gui';
+import { computeBoundsTree, disposeBoundsTree } from 'three-mesh-bvh';
+import { PathTracingRenderer, PhysicalPathTracingMaterial, PathTracingSceneGenerator }
+    from 'three-gpu-pathtracer';
 
-        window.THREE = THREE;
-        THREE.BufferGeometry.prototype.computeBoundsTree = computeBoundsTree;
-        THREE.BufferGeometry.prototype.disposeBoundsTree = disposeBoundsTree;
+window.THREE = THREE;
+THREE.BufferGeometry.prototype.computeBoundsTree  = computeBoundsTree;
+THREE.BufferGeometry.prototype.disposeBoundsTree  = disposeBoundsTree;
 
-        let camera, renderer, ptRenderer, ptSceneGenerator;
-        let displayScene, displayCamera, displayMesh;
-        let orbitControls;
-        let envTex = null;
+// ─────────────────────────────────────────────────────────────────────────────
+//  CONSTANTS
+// ─────────────────────────────────────────────────────────────────────────────
+const INTERACT_SCALE = 0.30;   // resolution fraction during camera drag
+const INTERACT_MS    = 150;    // ms of stillness before idle mode
+const SCALE_MIN      = 0.25;   // minimum idle path-trace resolution
+// Progressive bounces: [sppThreshold, bounceCount] — applied in order, last match wins
+const BOUNCE_RAMP = [[0, 2], [10, 4], [28, 6]];
 
-        let sceneMeshes = [];
-        let renderNeedsUpdate = false;
-        let lastSamples = -1;
+// ─────────────────────────────────────────────────────────────────────────────
+//  STATE
+// ─────────────────────────────────────────────────────────────────────────────
+let camera, renderer, ptRenderer, ptSceneGenerator;
+let displayScene, displayCamera, displayMesh;
+let orbitControls, envTex;
+let sceneMeshes   = [];
+let rebuildNeeded = false;
+let wasCompiling  = false;
 
-        // Dynamic resolution
-        const INTERACT_SCALE = 0.3;
-        const INTERACT_COOLDOWN = 150; // ms
-        let currentScale = -1;
-        let lastInteraction = -1e9;
+// timing
+let lastFrameT = performance.now();
+let avgDt      = -1;
+let steadyDt   = -1;   // EMA of dt measured during idle non-converged frames
 
-        // Adaptive tiling — tighter range 1..16, with hysteresis
-        let idleGrid = 2;
-        let appliedGrid = -1;
-        let prevSampleInt = -1;
-        let avgDt = -1;
-        let lastFrame = performance.now();
-        let wasCompiling = false;
+// adaptive resolution
+// Key design:  tiles = 1×1 always  →  1 full sample per frame  →  SPP/sec = FPS
+// idleScale is computed from measured performance and applied at run boundaries.
+let idleScale     = 0.75;
+let currentScale  = -1;
+let lastInteractT = -1e9;
+let prevInteracting = false;
 
-        // Resolution ramp: during idle, start at 50% for first 8 samples then ramp up
-        let rampStartTime = -1;
-        let rampSamples = 0;
-        const RAMP_SAMPLE_THRESHOLD = 8;
-        const RAMP_SCALE = 0.5;
+// denoiser ping-pong targets
+let pingRT = null, pongRT = null;
+let denoiserScene, denoiserCamera, denoiserMesh, denoiserMat;
 
-        // Denoiser
-        let pingRT = null, pongRT = null;
-        let denoiserScene, denoiserCamera, denoiserMesh;
-        let denoiserMaterial = null;
-        let denoiseEnabled = true;
+let gui;
 
-        const params = {
-            bounces: 6,
-            maxSamples: 512,
-            resolutionScale: 1.0,
-            targetFPS: 30,
-            debugDisableEnv: false,
-            filterGlossy: 0.6,
-            denoiseEnabled: true,
-            // sky/sun
-            envIntensity: 2.0,
-            skyZenith: '#5e9bd6',
-            skyHorizon: '#e8f3ff',
-            groundColor: '#4a4540',
-            sunColor: '#fff4e0',
-            sunAzimuth: 35,
-            sunElevation: 55,
-            sunSize: 4.0,
-            sunIntensity: 40.0,
-            // objects
-            addSphere: () => addPrimitive('sphere'),
-            addBox:    () => addPrimitive('box'),
-            loadModel: () => document.getElementById('file-input').click(),
-            // preset
-            preset: 'Balanced'
-        };
+// ─────────────────────────────────────────────────────────────────────────────
+//  PARAMS & PRESETS
+// ─────────────────────────────────────────────────────────────────────────────
+const params = {
+    maxSamples:      512,
+    bounces:           6,
+    targetFPS:        30,
+    resolutionScale: 1.0,
+    filterGlossy:   0.75,
+    denoiseEnabled:  true,
+    // sky
+    envIntensity:    2.0,
+    skyZenith:   '#5e9bd6',
+    skyHorizon:  '#e8f3ff',
+    groundColor: '#4a4540',
+    sunColor:    '#fff4e0',
+    sunAzimuth:     35,
+    sunElevation:   55,
+    sunSize:         4.0,
+    sunIntensity:   40.0,
+    debugDisableEnv: false,
+    // objects
+    addSphere: () => addPrimitive('sphere'),
+    addBox:    () => addPrimitive('box'),
+    loadModel: () => document.getElementById('file-input').click(),
+    preset: 'Balanced'
+};
 
-        const PRESETS = {
-            Fast:     { targetFPS: 60, bounces: 4,  filterGlossy: 0.8 },
-            Balanced: { targetFPS: 30, bounces: 6,  filterGlossy: 0.6 },
-            Quality:  { targetFPS: 15, bounces: 10, filterGlossy: 0.3 }
-        };
+const PRESETS = {
+    Fast:     { targetFPS: 60, bounces: 3,  filterGlossy: 0.85, resolutionScale: 0.75 },
+    Balanced: { targetFPS: 30, bounces: 6,  filterGlossy: 0.75, resolutionScale: 1.00 },
+    Quality:  { targetFPS: 15, bounces: 10, filterGlossy: 0.50, resolutionScale: 1.00 },
+};
 
-        // ---- A-Trous bilateral denoiser GLSL ----
-        const DENOISE_VERT = `
+// ─────────────────────────────────────────────────────────────────────────────
+//  A-TROUS BILATERAL DENOISER  (3-pass, B3-spline 5×5 kernel)
+// ─────────────────────────────────────────────────────────────────────────────
+const VERT_SRC = `
 varying vec2 vUv;
-void main() {
-    vUv = uv;
-    gl_Position = vec4(position.xy, 0.0, 1.0);
-}`;
+void main(){ vUv = uv; gl_Position = vec4(position.xy, 0.0, 1.0); }`;
 
-        const DENOISE_FRAG = `
+const FRAG_SRC = `
 precision highp float;
 uniform sampler2D tDiffuse;
-uniform vec2 resolution;
-uniform float strength;    // 0..1
-uniform float stepSize;    // 1, 2, 4
+uniform vec2      resolution;
+uniform float     strength;   // 0..1
+uniform float     stepSize;   // 1, 2, 4
 
 varying vec2 vUv;
 
-float luma(vec3 c) { return dot(c, vec3(0.2126, 0.7152, 0.0722)); }
+float luma(vec3 c){ return dot(c, vec3(0.2126, 0.7152, 0.0722)); }
 
-void main() {
-    vec2 texel = 1.0 / resolution;
-    vec4 center = texture2D(tDiffuse, vUv);
-    float centerLuma = luma(center.rgb);
+void main(){
+    if(strength < 0.005){ gl_FragColor = texture2D(tDiffuse, vUv); return; }
 
-    // 5x5 A-Trous kernel weights (Gaussian-shaped, only sample at stride stepSize)
-    float kernel[5];
-    kernel[0] = 1.0/16.0;
-    kernel[1] = 4.0/16.0;
-    kernel[2] = 6.0/16.0;
-    kernel[3] = 4.0/16.0;
-    kernel[4] = 1.0/16.0;
+    vec2 px  = 1.0 / resolution;
+    vec4 cen = texture2D(tDiffuse, vUv);
+    float lC = luma(cen.rgb);
 
-    vec4 accum = vec4(0.0);
-    float totalWeight = 0.0;
+    // B3-spline 1-D weights
+    float k[5];
+    k[0]=1.0/16.0; k[1]=4.0/16.0; k[2]=6.0/16.0; k[3]=4.0/16.0; k[4]=1.0/16.0;
 
-    for (int j = 0; j < 5; j++) {
-        for (int i = 0; i < 5; i++) {
-            vec2 offset = vec2(float(i - 2), float(j - 2)) * stepSize * texel;
-            vec4 sampleColor = texture2D(tDiffuse, vUv + offset);
-            float sampleLuma = luma(sampleColor.rgb);
+    vec4  acc = vec4(0.0);
+    float tw  = 0.0;
 
-            float spatialW = kernel[i] * kernel[j];
-            float lumaDiff = abs(centerLuma - sampleLuma);
-            float rangeW = exp(-lumaDiff * 8.0);
-
-            float w = spatialW * rangeW;
-            accum += sampleColor * w;
-            totalWeight += w;
+    for(int j=0; j<5; j++){
+        for(int i=0; i<5; i++){
+            vec2  off  = vec2(float(i-2), float(j-2)) * stepSize * px;
+            vec4  s    = texture2D(tDiffuse, vUv + off);
+            float sw   = k[i] * k[j];
+            // luminance-based edge-stop — tighter than color distance, cheaper
+            float rw   = exp(-abs(luma(s.rgb) - lC) * 10.0);
+            float w    = sw * rw;
+            acc += s * w;
+            tw  += w;
         }
     }
 
-    vec4 filtered = accum / max(totalWeight, 1e-6);
-    // Blend: filtered at strength=1, original at strength=0
-    gl_FragColor = mix(center, filtered, strength);
+    gl_FragColor = mix(cen, acc / max(tw, 1e-6), strength);
 }`;
 
-        init();
-        animate();
+// ─────────────────────────────────────────────────────────────────────────────
+//  INIT
+// ─────────────────────────────────────────────────────────────────────────────
+init();
+animate();
 
-        // ============================================================
-        function init() {
-            renderer = new THREE.WebGLRenderer({ antialias: false, powerPreference: "high-performance" });
-            renderer.toneMapping = THREE.ACESFilmicToneMapping;
-            renderer.toneMappingExposure = 1.6;
-            renderer.setSize(window.innerWidth, window.innerHeight);
-            renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
-            document.body.appendChild(renderer.domElement);
+function init(){
+    // WebGL renderer
+    renderer = new THREE.WebGLRenderer({ antialias: false, powerPreference: 'high-performance' });
+    renderer.toneMapping         = THREE.ACESFilmicToneMapping;
+    renderer.toneMappingExposure = 1.6;
+    renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
+    renderer.setSize(window.innerWidth, window.innerHeight);
+    document.body.appendChild(renderer.domElement);
 
-            camera = new THREE.PerspectiveCamera(55, window.innerWidth / window.innerHeight, 0.1, 1000);
-            camera.position.set(6, 4.5, 9);
+    // Camera
+    camera = new THREE.PerspectiveCamera(55, window.innerWidth / window.innerHeight, 0.1, 1000);
+    camera.position.set(6, 4.5, 9);
 
-            ptRenderer = new PathTracingRenderer(renderer);
-            ptRenderer.camera = camera;
-            ptRenderer.material = new PhysicalPathTracingMaterial();
-            ptRenderer.tiles.set(idleGrid, idleGrid);
-            appliedGrid = idleGrid;
+    // Path tracer  ← tiles always 1×1: guarantees 1 full sample per frame
+    ptRenderer = new PathTracingRenderer(renderer);
+    ptRenderer.camera   = camera;
+    ptRenderer.material = new PhysicalPathTracingMaterial();
+    ptRenderer.tiles.set(1, 1);
+    ptRenderer.bounces  = params.bounces;
+    ptRenderer.material.filterGlossyFactor = params.filterGlossy;
+
+    ptSceneGenerator = new PathTracingSceneGenerator();
+    ptSceneGenerator.generateBVH = true;
+
+    // Orbit controls
+    orbitControls = new OrbitControls(camera, renderer.domElement);
+    orbitControls.target.set(0, 1.2, 0);
+    orbitControls.update();
+    orbitControls.addEventListener('change', onInteract);
+
+    // Display fullscreen quad
+    displayCamera = new THREE.OrthographicCamera(-1, 1, 1, -1, 0, 1);
+    displayScene  = new THREE.Scene();
+    displayMesh   = new THREE.Mesh(
+        new THREE.PlaneGeometry(2, 2),
+        new THREE.MeshBasicMaterial({ map: ptRenderer.target.texture })
+    );
+    displayMesh.frustumCulled = false;
+    displayScene.add(displayMesh);
+
+    // Denoiser fullscreen quad
+    denoiserCamera = new THREE.OrthographicCamera(-1, 1, 1, -1, 0, 1);
+    denoiserScene  = new THREE.Scene();
+    denoiserMat    = new THREE.ShaderMaterial({
+        vertexShader: VERT_SRC, fragmentShader: FRAG_SRC,
+        uniforms: {
+            tDiffuse:   { value: null },
+            resolution: { value: new THREE.Vector2(1, 1) },
+            strength:   { value: 1.0 },
+            stepSize:   { value: 1.0 }
+        },
+        depthTest: false, depthWrite: false
+    });
+    denoiserMesh = new THREE.Mesh(new THREE.PlaneGeometry(2, 2), denoiserMat);
+    denoiserMesh.frustumCulled = false;
+    denoiserScene.add(denoiserMesh);
+
+    buildDefaultScene();
+    setupGUI();
+    document.getElementById('file-input').addEventListener('change', onFileLoad);
+    window.addEventListener('resize', onResize);
+
+    updateEnvironment();
+    applyScale(INTERACT_SCALE);   // small for fast initial shader compilation
+    camera.updateMatrixWorld();
+    ptRenderer.setCamera(camera);
+    rebuildBVH();
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+//  DEFAULT SCENE
+// ─────────────────────────────────────────────────────────────────────────────
+function buildDefaultScene(){
+    const add = (geo, mat, x, y, z) => {
+        const m = new THREE.Mesh(geo, mat);
+        m.position.set(x, y, z);
+        sceneMeshes.push(m);
+    };
+    // ground
+    add(new THREE.BoxGeometry(40, 0.2, 40),
+        new THREE.MeshStandardMaterial({ color: 0xb8b8bc, roughness: 0.08 }),
+        0, -0.1, 0);
+    // mirror sphere
+    add(new THREE.SphereGeometry(1.3, 32, 32),
+        new THREE.MeshStandardMaterial({ color: 0xffffff, metalness: 1.0, roughness: 0.02 }),
+        -3.2, 1.3, 0);
+    // gold sphere
+    add(new THREE.SphereGeometry(1.3, 32, 32),
+        new THREE.MeshStandardMaterial({ color: 0xffc864, metalness: 1.0, roughness: 0.18 }),
+        0, 1.3, -1.5);
+    // glass sphere
+    add(new THREE.SphereGeometry(1.3, 32, 32),
+        new THREE.MeshPhysicalMaterial({ color: 0xffffff, metalness: 0, roughness: 0,
+                                         transmission: 1.0, ior: 1.5, thickness: 1.4 }),
+        3.2, 1.3, 0);
+    // teal box
+    add(new THREE.BoxGeometry(1.8, 1.8, 1.8),
+        new THREE.MeshStandardMaterial({ color: 0x2f9e8f, roughness: 0.55 }),
+        1.4, 0.9, 2.6);
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+//  SKY TEXTURE  (512×256 equirect, atmospheric scattering approximation)
+// ─────────────────────────────────────────────────────────────────────────────
+function makeSkyTexture(W = 512, H = 256){
+    const data = new Float32Array(W * H * 4);
+
+    const az  = THREE.MathUtils.degToRad(params.sunAzimuth);
+    const el  = THREE.MathUtils.degToRad(params.sunElevation);
+    const sun = new THREE.Vector3(
+        Math.cos(el)*Math.sin(az), Math.sin(el), Math.cos(el)*Math.cos(az)
+    ).normalize();
+
+    const zen    = new THREE.Color(params.skyZenith);
+    const hor    = new THREE.Color(params.skyHorizon);
+    const grd    = new THREE.Color(params.groundColor);
+    const sunCol = new THREE.Color(params.sunColor);
+    const halfA  = THREE.MathUtils.degToRad(params.sunSize * 0.5);
+    const cosCore = Math.cos(halfA);
+    const cosPen  = Math.cos(halfA * 1.4);   // penumbra ring
+
+    for(let y = 0; y < H; y++){
+        const theta = ((y + 0.5) / H) * Math.PI;
+        const cy = Math.cos(theta);
+        const sy = Math.sin(theta);
+        for(let x = 0; x < W; x++){
+            const phi = ((x + 0.5) / W) * 2.0 * Math.PI;
+            const dx  = sy * Math.sin(phi);
+            const dz  = sy * Math.cos(phi);
+            let r, g, b;
+
+            if(cy >= -0.02){
+                // sky — power-law zenith/horizon blend
+                const t  = Math.pow(Math.max(cy, 0.0), 0.45);
+                r = hor.r*(1-t) + zen.r*t;
+                g = hor.g*(1-t) + zen.g*t;
+                b = hor.b*(1-t) + zen.b*t;
+                // subtle limb darkening
+                const ld = 0.85 + 0.15*t;
+                r *= ld; g *= ld; b *= ld;
+                // warm horizon haze band
+                const hz = Math.exp(-cy*cy * 120.0) * 0.25;
+                r += hor.r * hz * 1.4;
+                g += hor.g * hz * 1.2;
+                b += hor.b * hz;
+            } else {
+                // ground — fade from horizon colour
+                const f = Math.min((-cy) * 8.0, 1.0);
+                r = hor.r*(1-f) + grd.r*f;
+                g = hor.g*(1-f) + grd.g*f;
+                b = hor.b*(1-f) + grd.b*f;
+            }
+
+            // sun disk + penumbra with limb darkening
+            const dot = dx*sun.x + cy*sun.y + dz*sun.z;
+            if(dot > cosPen){
+                let ss;
+                if(dot > cosCore){
+                    const u = (dot - cosCore) / (1.0 - cosCore);
+                    ss = params.sunIntensity * (0.4 + 0.6 * Math.sqrt(u));
+                } else {
+                    const t2 = (dot - cosPen) / (cosCore - cosPen);
+                    ss = params.sunIntensity * 0.4 * t2 * t2;
+                }
+                r += sunCol.r * ss;
+                g += sunCol.g * ss;
+                b += sunCol.b * ss;
+            }
+
+            const i = (y * W + x) * 4;
+            data[i] = r; data[i+1] = g; data[i+2] = b; data[i+3] = 1.0;
+        }
+    }
+
+    const tex = new THREE.DataTexture(data, W, H, THREE.RGBAFormat, THREE.FloatType);
+    tex.mapping  = THREE.EquirectangularReflectionMapping;
+    tex.minFilter = tex.magFilter = THREE.LinearFilter;
+    tex.generateMipmaps = false;
+    tex.wrapS    = THREE.RepeatWrapping;
+    tex.wrapT    = THREE.ClampToEdgeWrapping;
+    tex.colorSpace = THREE.NoColorSpace;
+    tex.needsUpdate = true;
+    renderer.initTexture(tex);
+    return tex;
+}
+
+function updateEnvironment(){
+    if(envTex) envTex.dispose();
+    envTex = makeSkyTexture();
+    if(!params.debugDisableEnv)
+        ptRenderer.material.envMapInfo.updateFrom(envTex);
+    ptRenderer.material.environmentIntensity = params.envIntensity;
+    onInteract();
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+//  DENOISER  (resize render targets)
+// ─────────────────────────────────────────────────────────────────────────────
+function resizeDenoiser(w, h){
+    if(pingRT) pingRT.dispose();
+    if(pongRT) pongRT.dispose();
+    const cfg = {
+        format: THREE.RGBAFormat, type: THREE.HalfFloatType,
+        minFilter: THREE.LinearFilter, magFilter: THREE.LinearFilter,
+        depthBuffer: false, stencilBuffer: false
+    };
+    pingRT = new THREE.WebGLRenderTarget(w, h, cfg);
+    pongRT = new THREE.WebGLRenderTarget(w, h, cfg);
+}
+
+// strength: 1.0 at 1 SPP → 0.0 at 128 SPP  (log2 ramp)
+function denoiseStrength(spp){
+    if(!params.denoiseEnabled) return 0.0;
+    return Math.max(0.0, 1.0 - Math.log2(Math.max(spp, 1)) / 7.0);
+}
+
+function runDenoiser(spp){
+    const str = denoiseStrength(spp);
+    if(str < 0.005){
+        displayMesh.material.map = ptRenderer.target.texture;
+        displayMesh.material.needsUpdate = true;
+        return;
+    }
+    const w = pingRT.width, h = pingRT.height;
+    denoiserMat.uniforms.resolution.value.set(w, h);
+    denoiserMat.uniforms.strength.value = str;
+
+    // pass 1 — step=1  (ptTarget → ping)
+    denoiserMat.uniforms.tDiffuse.value = ptRenderer.target.texture;
+    denoiserMat.uniforms.stepSize.value = 1.0;
+    renderer.setRenderTarget(pingRT);
+    renderer.render(denoiserScene, denoiserCamera);
+
+    // pass 2 — step=2  (ping → pong)
+    denoiserMat.uniforms.tDiffuse.value = pingRT.texture;
+    denoiserMat.uniforms.stepSize.value = 2.0;
+    renderer.setRenderTarget(pongRT);
+    renderer.render(denoiserScene, denoiserCamera);
+
+    // pass 3 — step=4  (pong → ping)
+    denoiserMat.uniforms.tDiffuse.value = pongRT.texture;
+    denoiserMat.uniforms.stepSize.value = 4.0;
+    renderer.setRenderTarget(pingRT);
+    renderer.render(denoiserScene, denoiserCamera);
+
+    displayMesh.material.map = pingRT.texture;
+    displayMesh.material.needsUpdate = true;
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+//  SCENE / BVH
+// ─────────────────────────────────────────────────────────────────────────────
+function addPrimitive(type){
+    const geo = type === 'sphere' ? new THREE.SphereGeometry(1, 32, 32)
+                                  : new THREE.BoxGeometry(1.5, 1.5, 1.5);
+    const mat = new THREE.MeshStandardMaterial({
+        color: Math.random() * 0xffffff,
+        roughness: Math.random() * 0.8,
+        metalness: Math.random() > 0.5 ? 1.0 : 0.0
+    });
+    const mesh = new THREE.Mesh(geo, mat);
+    mesh.position.set((Math.random()-0.5)*12, 1+Math.random()*2, (Math.random()-0.5)*12);
+    sceneMeshes.push(mesh);
+    rebuildNeeded = true;
+}
+
+function onFileLoad(e){
+    const file = e.target.files[0]; if(!file) return;
+    const url  = URL.createObjectURL(file);
+    const ext  = file.name.split('.').pop().toLowerCase();
+    const onLoad = (obj) => {
+        const model = obj.scene || obj;
+        const box   = new THREE.Box3().setFromObject(model);
+        const size  = box.getSize(new THREE.Vector3());
+        const sc    = 5 / Math.max(size.x, size.y, size.z);
+        model.scale.setScalar(sc);
+        model.position.sub(box.getCenter(new THREE.Vector3()).multiplyScalar(sc));
+        model.position.y += 2.5;
+        model.updateMatrixWorld(true);
+        model.traverse(c => {
+            if(c.isMesh){ if(c.material) c.material.roughness = 0.2; sceneMeshes.push(c); }
+        });
+        rebuildNeeded = true;
+        URL.revokeObjectURL(url);
+    };
+    if(ext==='gltf'||ext==='glb') new GLTFLoader().load(url, onLoad);
+    else if(ext==='obj')          new OBJLoader().load(url, onLoad);
+}
+
+function rebuildBVH(){
+    setSt('BVH…');
+    camera.updateMatrixWorld(); camera.updateProjectionMatrix();
+    const frustum = new THREE.Frustum().setFromProjectionMatrix(
+        new THREE.Matrix4().multiplyMatrices(camera.projectionMatrix, camera.matrixWorldInverse)
+    );
+    const group = new THREE.Group();
+    const aabb  = new THREE.Box3();
+    sceneMeshes.forEach(m => {
+        m.updateMatrixWorld(true); aabb.setFromObject(m);
+        const dim = aabb.getSize(new THREE.Vector3()).length();
+        if(dim > 10 || frustum.intersectsBox(aabb)) group.add(m.clone());
+    });
+    try {
+        ptSceneGenerator.setObjects(group);
+        const { bvh, geometry, materials, textures, iesTextures } = ptSceneGenerator.generate();
+        if(!bvh || !geometry){ setSt('BVH err'); return; }
+        const mat = ptRenderer.material;
+        mat.bvh.updateFrom(bvh);
+        mat.attributesArray.updateFrom(
+            geometry.attributes.normal, geometry.attributes.tangent,
+            geometry.attributes.uv,    geometry.attributes.color
+        );
+        mat.materialIndexAttribute.updateFrom(geometry.attributes.materialIndex);
+        mat.textures.setTextures(renderer, textures, 512, 512);   // 512-px atlas for speed
+        mat.materials.updateFrom(materials, textures);
+        mat.lights.updateFrom([], iesTextures || []);
+        ptRenderer.bounces = params.bounces;
+        onInteract();
+    } catch(err){
+        console.error(err);
+        setSt('BVH err');
+    }
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+//  RESOLUTION  (applied only at run boundaries — never mid-convergence)
+// ─────────────────────────────────────────────────────────────────────────────
+function applyScale(s){
+    s = Math.max(SCALE_MIN, Math.min(1.0, s));
+    if(Math.abs(s - currentScale) < 0.01) return;
+    currentScale = s;
+    const w = Math.ceil(window.innerWidth  * s);
+    const h = Math.ceil(window.innerHeight * s);
+    ptRenderer.setSize(w, h);
+    resizeDenoiser(w, h);
+    displayMesh.material.map = ptRenderer.target.texture;
+    displayMesh.material.needsUpdate = true;
+    ptRenderer.reset();
+}
+
+// Called at the start of each new idle run.
+// Adjusts idleScale using EMA frame-time from the PREVIOUS run so no
+// mid-convergence resets ever occur.
+function adaptAndApplyIdle(){
+    if(steadyDt > 0){
+        const tgt = 1000 / params.targetFPS;
+        // GPU cost ∝ pixels ∝ scale²  →  scale correction = sqrt(tgt/measured)
+        const newScale = idleScale * Math.sqrt(tgt / steadyDt);
+        idleScale = Math.max(SCALE_MIN, Math.min(params.resolutionScale, newScale));
+        steadyDt  = -1;
+    }
+    applyScale(idleScale);
+}
+
+// Fired by orbit controls or any scene change
+function onInteract(){
+    lastInteractT = performance.now();
+    // Carry idleScale adaptation forward on each interaction
+    if(steadyDt > 0){
+        const tgt = 1000 / params.targetFPS;
+        const ns  = idleScale * Math.sqrt(tgt / steadyDt);
+        idleScale = Math.max(SCALE_MIN, Math.min(params.resolutionScale, ns));
+        steadyDt  = -1;
+    }
+    applyScale(INTERACT_SCALE);
+}
+
+function onResize(){
+    camera.aspect = window.innerWidth / window.innerHeight;
+    camera.updateProjectionMatrix();
+    renderer.setSize(window.innerWidth, window.innerHeight);
+    currentScale = -1;
+    onInteract();
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+//  PROGRESSIVE BOUNCES  (ramp from 2 up to params.bounces as SPP grows)
+// ─────────────────────────────────────────────────────────────────────────────
+function progressiveBounces(spp){
+    let b = BOUNCE_RAMP[0][1];
+    for(const [thresh, val] of BOUNCE_RAMP)
+        if(spp >= thresh) b = Math.min(params.bounces, val);
+    return b;
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+//  GUI
+// ─────────────────────────────────────────────────────────────────────────────
+function setupGUI(){
+    gui = new GUI({ title: 'Path Tracer' });
+
+    const presetF = gui.addFolder('Preset'); presetF.open();
+    presetF.add(params, 'preset', Object.keys(PRESETS)).name('Quality Preset')
+        .onChange(v => {
+            Object.assign(params, PRESETS[v]);
             ptRenderer.material.filterGlossyFactor = params.filterGlossy;
-
-            ptSceneGenerator = new PathTracingSceneGenerator();
-            ptSceneGenerator.generateBVH = true;
-
-            orbitControls = new OrbitControls(camera, renderer.domElement);
-            orbitControls.target.set(0, 1.2, 0);
-            orbitControls.update();
-            orbitControls.addEventListener('change', onInteract);
-
-            buildDefaultScene();
-            setupGUI();
-            document.getElementById('file-input').addEventListener('change', handleFileUpload);
-            window.addEventListener('resize', onWindowResize);
-
-            // Display quad
-            displayCamera = new THREE.OrthographicCamera(-1, 1, 1, -1, 0, 1);
-            displayScene = new THREE.Scene();
-            displayMesh = new THREE.Mesh(
-                new THREE.PlaneGeometry(2, 2),
-                new THREE.MeshBasicMaterial({ map: ptRenderer.target.texture })
-            );
-            displayMesh.frustumCulled = false;
-            displayScene.add(displayMesh);
-
-            // Denoiser fullscreen quad (separate scene/camera reused above)
-            denoiserCamera = new THREE.OrthographicCamera(-1, 1, 1, -1, 0, 1);
-            denoiserScene  = new THREE.Scene();
-            denoiserMaterial = new THREE.ShaderMaterial({
-                vertexShader:   DENOISE_VERT,
-                fragmentShader: DENOISE_FRAG,
-                uniforms: {
-                    tDiffuse:   { value: null },
-                    resolution: { value: new THREE.Vector2(1, 1) },
-                    strength:   { value: 1.0 },
-                    stepSize:   { value: 1.0 }
-                },
-                depthTest: false, depthWrite: false
-            });
-            denoiserMesh = new THREE.Mesh(new THREE.PlaneGeometry(2, 2), denoiserMaterial);
-            denoiserMesh.frustumCulled = false;
-            denoiserScene.add(denoiserMesh);
-
-            updateEnvironment();
-            applyScale(params.resolutionScale);
-
-            camera.updateMatrixWorld();
-            ptRenderer.setCamera(camera);
-            updatePTScene();
-        }
-
-        // ---- default scene ----
-        function buildDefaultScene() {
-            const floor = new THREE.Mesh(
-                new THREE.BoxGeometry(40, 0.2, 40),
-                new THREE.MeshStandardMaterial({ color: 0xb8b8bc, roughness: 0.08, metalness: 0.0 })
-            );
-            floor.position.y = -0.1;
-            sceneMeshes.push(floor);
-
-            sceneMeshes.push(makeMesh(
-                new THREE.SphereGeometry(1.3, 48, 48),
-                new THREE.MeshStandardMaterial({ color: 0xffffff, metalness: 1.0, roughness: 0.02 }),
-                -3.2, 1.3, 0
-            ));
-            sceneMeshes.push(makeMesh(
-                new THREE.SphereGeometry(1.3, 48, 48),
-                new THREE.MeshStandardMaterial({ color: 0xffc864, metalness: 1.0, roughness: 0.18 }),
-                0, 1.3, -1.5
-            ));
-
-            const glass = new THREE.MeshPhysicalMaterial({
-                color: 0xffffff, metalness: 0.0, roughness: 0.0,
-                transmission: 1.0, ior: 1.5, thickness: 1.4
-            });
-            sceneMeshes.push(makeMesh(new THREE.SphereGeometry(1.3, 48, 48), glass, 3.2, 1.3, 0));
-            sceneMeshes.push(makeMesh(
-                new THREE.BoxGeometry(1.8, 1.8, 1.8),
-                new THREE.MeshStandardMaterial({ color: 0x2f9e8f, roughness: 0.55, metalness: 0.0 }),
-                1.4, 0.9, 2.6
-            ));
-        }
-
-        function makeMesh(geo, mat, x, y, z) {
-            const m = new THREE.Mesh(geo, mat);
-            m.position.set(x, y, z);
-            return m;
-        }
-
-        // ---- improved sky texture 512x256 with atmospheric scattering ----
-        function makeSkyTexture(W = 512, H = 256) {
-            const data = new Float32Array(W * H * 4);
-
-            const az = THREE.MathUtils.degToRad(params.sunAzimuth);
-            const el = THREE.MathUtils.degToRad(params.sunElevation);
-            const sun = new THREE.Vector3(
-                Math.cos(el) * Math.sin(az),
-                Math.sin(el),
-                Math.cos(el) * Math.cos(az)
-            ).normalize();
-
-            const zen = new THREE.Color(params.skyZenith);
-            const hor = new THREE.Color(params.skyHorizon);
-            const grd = new THREE.Color(params.groundColor);
-            const sunCol = new THREE.Color(params.sunColor);
-            const sunHalfAngle = THREE.MathUtils.degToRad(params.sunSize * 0.5);
-            const cosSize = Math.cos(sunHalfAngle);
-            // slightly wider for penumbra
-            const cosSoft = Math.cos(sunHalfAngle * 1.35);
-
-            for (let y = 0; y < H; y++) {
-                const v = (y + 0.5) / H;
-                const theta = v * Math.PI;
-                const cy = Math.cos(theta);  // +1 top, -1 bottom
-                const sy = Math.sin(theta);
-
-                for (let x = 0; x < W; x++) {
-                    const phi = ((x + 0.5) / W) * 2.0 * Math.PI;
-                    const dx = sy * Math.sin(phi);
-                    const dz = sy * Math.cos(phi);
-
-                    let r, g, b;
-
-                    if (cy >= -0.02) {
-                        // sky hemisphere
-                        // atmospheric scattering: zenith-to-horizon blend with pow shaping
-                        const t = Math.pow(Math.max(cy, 0.0), 0.45);
-                        r = hor.r * (1 - t) + zen.r * t;
-                        g = hor.g * (1 - t) + zen.g * t;
-                        b = hor.b * (1 - t) + zen.b * t;
-
-                        // limb darkening on sky: slightly darker near horizon edges
-                        const limbFactor = 0.85 + 0.15 * t;
-                        r *= limbFactor; g *= limbFactor; b *= limbFactor;
-
-                        // horizon haze band — a warm/bright strip just above the horizon
-                        const horizonBand = Math.exp(-cy * cy * 120.0) * 0.25;
-                        r += hor.r * horizonBand * 1.4;
-                        g += hor.g * horizonBand * 1.2;
-                        b += hor.b * horizonBand;
-                    } else {
-                        // ground, with gentle fade from horizon
-                        const fade = Math.min((-cy) * 8.0, 1.0);
-                        r = hor.r * (1 - fade) + grd.r * fade;
-                        g = hor.g * (1 - fade) + grd.g * fade;
-                        b = hor.b * (1 - fade) + grd.b * fade;
-                    }
-
-                    // sun disk with limb darkening
-                    const dot = dx * sun.x + cy * sun.y + dz * sun.z;
-                    if (dot > cosSoft) {
-                        let sunStrength;
-                        if (dot > cosSize) {
-                            // inside disk — limb darkening: center bright, edge dim
-                            const u = (dot - cosSize) / (1.0 - cosSize);  // 0=edge 1=center
-                            const limbDark = 0.4 + 0.6 * Math.sqrt(u);
-                            sunStrength = params.sunIntensity * limbDark;
-                        } else {
-                            // penumbra
-                            const t2 = (dot - cosSoft) / (cosSize - cosSoft);
-                            sunStrength = params.sunIntensity * 0.4 * t2 * t2;
-                        }
-                        r += sunCol.r * sunStrength;
-                        g += sunCol.g * sunStrength;
-                        b += sunCol.b * sunStrength;
-                    }
-
-                    const i = (y * W + x) * 4;
-                    data[i] = r; data[i+1] = g; data[i+2] = b; data[i+3] = 1.0;
-                }
-            }
-
-            const tex = new THREE.DataTexture(data, W, H, THREE.RGBAFormat, THREE.FloatType);
-            tex.mapping    = THREE.EquirectangularReflectionMapping;
-            tex.minFilter  = THREE.LinearFilter;
-            tex.magFilter  = THREE.LinearFilter;
-            tex.generateMipmaps = false;
-            tex.wrapS      = THREE.RepeatWrapping;
-            tex.wrapT      = THREE.ClampToEdgeWrapping;
-            tex.colorSpace = THREE.NoColorSpace;
-            tex.needsUpdate = true;
-            renderer.initTexture(tex);
-            return tex;
-        }
-
-        function updateEnvironment() {
-            if (envTex) envTex.dispose();
-            envTex = makeSkyTexture();
-            if (!params.debugDisableEnv) {
-                ptRenderer.material.envMapInfo.updateFrom(envTex);
-            }
-            ptRenderer.material.environmentIntensity = params.envIntensity;
+            idleScale = params.resolutionScale;
+            gui.controllersRecursive().forEach(c => c.updateDisplay());
             onInteract();
-        }
+        });
 
-        // ---- denoiser render targets ----
-        function resizeDenoiser(w, h) {
-            if (pingRT) pingRT.dispose();
-            if (pongRT) pongRT.dispose();
-            const opts = {
-                format: THREE.RGBAFormat,
-                type: THREE.HalfFloatType,
-                minFilter: THREE.LinearFilter,
-                magFilter: THREE.LinearFilter,
-                depthBuffer: false,
-                stencilBuffer: false
-            };
-            pingRT = new THREE.WebGLRenderTarget(w, h, opts);
-            pongRT = new THREE.WebGLRenderTarget(w, h, opts);
-        }
+    const skyF = gui.addFolder('Sun & Sky');
+    skyF.add(params, 'sunAzimuth',   0, 360, 1).name('Sun Azimuth').onChange(updateEnvironment);
+    skyF.add(params, 'sunElevation',-10,  90, 1).name('Sun Elevation').onChange(updateEnvironment);
+    skyF.add(params, 'sunSize',     0.5,  30, 0.5).name('Shadow Softness').onChange(updateEnvironment);
+    skyF.add(params, 'sunIntensity',  0,  60, 0.5).name('Sun Intensity').onChange(updateEnvironment);
+    skyF.addColor(params, 'sunColor').name('Sun Color').onChange(updateEnvironment);
+    skyF.addColor(params, 'skyZenith').name('Sky Top').onChange(updateEnvironment);
+    skyF.addColor(params, 'skyHorizon').name('Sky Horizon').onChange(updateEnvironment);
+    skyF.addColor(params, 'groundColor').name('Ground').onChange(updateEnvironment);
+    skyF.add(params, 'envIntensity', 0, 3, 0.05).name('Env Intensity').onChange(updateEnvironment);
+    skyF.add(params, 'debugDisableEnv').name('Disable Custom Env').onChange(updateEnvironment);
 
-        // Compute denoiser strength: 1.0 at 1 sample → 0.0 at ~128 samples
-        function denoiseStrength(samples) {
-            if (!params.denoiseEnabled) return 0.0;
-            const s = Math.max(samples, 1);
-            return Math.max(0.0, 1.0 - Math.log2(s) / 7.0);  // log2(128)=7
-        }
+    const renderF = gui.addFolder('Render');
+    renderF.add(params, 'bounces', 1, 16, 1)
+        .onChange(() => { ptRenderer.bounces = params.bounces; onInteract(); });
+    renderF.add(params, 'maxSamples', 32, 4096, 16);
+    renderF.add(params, 'targetFPS', 10, 60, 5).name('Target FPS').onChange(onInteract);
+    renderF.add(params, 'resolutionScale', 0.25, 1.0, 0.05).name('Max Resolution')
+        .onChange(() => { idleScale = params.resolutionScale; onInteract(); });
+    renderF.add(params, 'filterGlossy', 0, 1, 0.05).name('Glossy Filter')
+        .onChange(() => { ptRenderer.material.filterGlossyFactor = params.filterGlossy; onInteract(); });
+    renderF.add(renderer, 'toneMappingExposure', 0.2, 2.0, 0.05).name('Exposure').onChange(onInteract);
+    renderF.add(params, 'denoiseEnabled').name('A-Trous Denoise');
 
-        // Run 3-pass A-Trous denoiser, writing final result into displayMesh's texture
-        function applyDenoiser(samples) {
-            const str = denoiseStrength(samples);
-            if (str < 0.005) {
-                // denoiser inactive — display raw PT output
-                displayMesh.material.map = ptRenderer.target.texture;
-                displayMesh.material.needsUpdate = true;
-                return;
-            }
+    const objF = gui.addFolder('Objects');
+    objF.add(params, 'addSphere').name('Add Sphere');
+    objF.add(params, 'addBox').name('Add Box');
+    objF.add(params, 'loadModel').name('Load OBJ/GLTF');
+}
 
-            const w = pingRT.width;
-            const h = pingRT.height;
-            denoiserMaterial.uniforms.resolution.value.set(w, h);
-            denoiserMaterial.uniforms.strength.value = str;
+// ─────────────────────────────────────────────────────────────────────────────
+//  HUD
+// ─────────────────────────────────────────────────────────────────────────────
+function setSt(s){ document.getElementById('v-st').innerText = s; }
 
-            // Pass 1: ptRenderer.target → ping (stepSize=1)
-            denoiserMaterial.uniforms.tDiffuse.value = ptRenderer.target.texture;
-            denoiserMaterial.uniforms.stepSize.value = 1.0;
-            renderer.setRenderTarget(pingRT);
-            renderer.render(denoiserScene, denoiserCamera);
+function updateHUD(spp, interacting, converged){
+    const fps  = Math.round(1000 / Math.max(avgDt, 1));
+    const resW = Math.ceil(window.innerWidth  * currentScale);
+    const resH = Math.ceil(window.innerHeight * currentScale);
+    const dn   = Math.round(denoiseStrength(spp) * 100);
+    document.getElementById('v-spp').innerText = spp;
+    document.getElementById('v-fps').innerText = fps;
+    document.getElementById('v-res').innerText = `${resW}×${resH}`;
+    document.getElementById('v-dn').innerText  = params.denoiseEnabled ? `${dn}%` : 'off';
+    setSt(converged ? '✓ done' : interacting ? 'preview' : 'rendering');
+    document.getElementById('prog-bar').style.width =
+        Math.min(spp / params.maxSamples * 100, 100) + '%';
+}
 
-            // Pass 2: ping → pong (stepSize=2)
-            denoiserMaterial.uniforms.tDiffuse.value = pingRT.texture;
-            denoiserMaterial.uniforms.stepSize.value = 2.0;
-            renderer.setRenderTarget(pongRT);
-            renderer.render(denoiserScene, denoiserCamera);
+// ─────────────────────────────────────────────────────────────────────────────
+//  MAIN LOOP
+//
+//  Architecture: tiles=1×1 always → 1 full sample per frame → SPP/sec ≈ FPS
+//  Adaptive resolution maintains target FPS using frame-time EMA measured
+//  during the previous idle convergence run. Scale is only changed at run
+//  boundaries (when a reset would happen anyway) so accumulated samples are
+//  never discarded mid-convergence.
+// ─────────────────────────────────────────────────────────────────────────────
+function animate(){
+    requestAnimationFrame(animate);
 
-            // Pass 3: pong → ping (stepSize=4)
-            denoiserMaterial.uniforms.tDiffuse.value = pongRT.texture;
-            denoiserMaterial.uniforms.stepSize.value = 4.0;
-            renderer.setRenderTarget(pingRT);
-            renderer.render(denoiserScene, denoiserCamera);
+    const now = performance.now();
+    const dt  = now - lastFrameT;
+    lastFrameT = now;
+    avgDt = avgDt < 0 ? dt : avgDt * 0.9 + dt * 0.1;
 
-            // Display the final denoised ping
-            displayMesh.material.map = pingRT.texture;
-            displayMesh.material.needsUpdate = true;
-        }
+    // ── BVH rebuild ──────────────────────────────────────────────────────────
+    if(rebuildNeeded){ rebuildBVH(); rebuildNeeded = false; return; }
 
-        // ---- primitives / file upload ----
-        function addPrimitive(type) {
-            const geo = type === 'sphere'
-                ? new THREE.SphereGeometry(1, 40, 40)
-                : new THREE.BoxGeometry(1.5, 1.5, 1.5);
-            const mat = new THREE.MeshStandardMaterial({
-                color: Math.random() * 0xffffff,
-                roughness: Math.random() * 0.8,
-                metalness: Math.random() > 0.5 ? 1.0 : 0.0
-            });
-            const mesh = new THREE.Mesh(geo, mat);
-            mesh.position.set((Math.random() - 0.5) * 12, 1 + Math.random() * 2, (Math.random() - 0.5) * 12);
-            sceneMeshes.push(mesh);
-            renderNeedsUpdate = true;
-        }
+    // ── shader compile guard ─────────────────────────────────────────────────
+    if(ptRenderer.material.isCompiling){
+        wasCompiling = true;
+        setSt('Compiling…');
+        renderer.setRenderTarget(null);
+        renderer.render(displayScene, displayCamera);
+        return;
+    }
+    if(wasCompiling){
+        wasCompiling = false;
+        // Compilation done — start an idle run at the adapted scale
+        adaptAndApplyIdle();
+        ptRenderer.reset();
+    }
 
-        function handleFileUpload(event) {
-            const file = event.target.files[0];
-            if (!file) return;
-            const url = URL.createObjectURL(file);
-            const ext = file.name.split('.').pop().toLowerCase();
+    const interacting = (now - lastInteractT) < INTERACT_MS;
+    const spp         = Math.floor(ptRenderer.samples);
+    const converged   = !interacting && spp >= params.maxSamples;
 
-            const onLoad = (object) => {
-                const model = object.scene || object;
-                const box   = new THREE.Box3().setFromObject(model);
-                const center = box.getCenter(new THREE.Vector3());
-                const size   = box.getSize(new THREE.Vector3());
-                const maxDim = Math.max(size.x, size.y, size.z);
-                model.scale.setScalar(5 / maxDim);
-                model.position.sub(center.multiplyScalar(5 / maxDim));
-                model.position.y += 2.5;
-                model.updateMatrixWorld(true);
-                model.traverse((c) => {
-                    if (c.isMesh) {
-                        if (c.material) c.material.roughness = 0.2;
-                        sceneMeshes.push(c);
-                    }
-                });
-                renderNeedsUpdate = true;
-                URL.revokeObjectURL(url);
-            };
+    // ── transition: interaction ended → begin idle convergence run ───────────
+    if(!interacting && prevInteracting){
+        adaptAndApplyIdle();
+    }
+    prevInteracting = interacting;
 
-            if (ext === 'gltf' || ext === 'glb') new GLTFLoader().load(url, onLoad);
-            else if (ext === 'obj')               new OBJLoader().load(url, onLoad);
-        }
+    // ── measure frame time during steady idle rendering (after 5 SPP warm-up) ─
+    if(!interacting && !converged && spp > 5){
+        steadyDt = steadyDt < 0 ? dt : steadyDt * 0.95 + dt * 0.05;
+    }
 
-        // ---- BVH build ----
-        function updatePTScene() {
-            document.getElementById('hud-status-val').innerText = 'Building BVH…';
+    // ── progressive bounces ──────────────────────────────────────────────────
+    ptRenderer.bounces = progressiveBounces(spp);
 
-            camera.updateMatrixWorld();
-            camera.updateProjectionMatrix();
-            const frustum = new THREE.Frustum();
-            const projScreenMatrix = new THREE.Matrix4()
-                .multiplyMatrices(camera.projectionMatrix, camera.matrixWorldInverse);
-            frustum.setFromProjectionMatrix(projScreenMatrix);
+    // ── path trace (1 full sample, tiles=1) ──────────────────────────────────
+    if(!converged){
+        camera.updateMatrixWorld();
+        ptRenderer.setCamera(camera);
+        ptRenderer.update();
+    }
 
-            const group = new THREE.Group();
-            const box   = new THREE.Box3();
-            let culled  = 0;
-            sceneMeshes.forEach(m => {
-                m.updateMatrixWorld(true);
-                box.setFromObject(m);
-                const size  = box.getSize(new THREE.Vector3());
-                const isLarge = Math.max(size.x, size.y, size.z) > 10;
-                if (isLarge || frustum.intersectsBox(box)) {
-                    group.add(m.clone());
-                } else {
-                    culled++;
-                }
-            });
+    // ── denoiser post-process ────────────────────────────────────────────────
+    runDenoiser(spp);
 
-            try {
-                ptSceneGenerator.setObjects(group);
-                const { bvh, geometry, materials, textures, iesTextures } = ptSceneGenerator.generate();
-                const material = ptRenderer.material;
+    // ── blit to screen ───────────────────────────────────────────────────────
+    renderer.setRenderTarget(null);
+    renderer.render(displayScene, displayCamera);
 
-                if (bvh && geometry) {
-                    material.bvh.updateFrom(bvh);
-                    material.attributesArray.updateFrom(
-                        geometry.attributes.normal, geometry.attributes.tangent,
-                        geometry.attributes.uv,     geometry.attributes.color
-                    );
-                    material.materialIndexAttribute.updateFrom(geometry.attributes.materialIndex);
-                    material.textures.setTextures(renderer, textures, 1024, 1024);
-                    material.materials.updateFrom(materials, textures);
-                    material.lights.updateFrom([], iesTextures || []);
-
-                    ptRenderer.bounces = params.bounces;
-                    onInteract();
-                } else {
-                    document.getElementById('hud-status-val').innerText = 'BVH error';
-                }
-            } catch (e) {
-                console.error('BVH error:', e);
-                document.getElementById('hud-status-val').innerText = 'Error: ' + e.message;
-            }
-        }
-
-        // ---- resolution / reset ----
-        function applyScale(s) {
-            if (Math.abs(s - currentScale) < 1e-4) return;
-            currentScale = s;
-            const w = Math.ceil(window.innerWidth  * s);
-            const h = Math.ceil(window.innerHeight * s);
-            ptRenderer.setSize(w, h);
-            resizeDenoiser(w, h);
-            // re-attach raw texture; applyDenoiser will switch it if needed
-            displayMesh.material.map = ptRenderer.target.texture;
-            displayMesh.material.needsUpdate = true;
-            resetPathTracer();
-        }
-
-        function resetPathTracer() {
-            ptRenderer.reset();
-            lastSamples = -1;
-            rampStartTime = performance.now();
-            rampSamples   = 0;
-        }
-
-        function onInteract() {
-            lastInteraction = performance.now();
-            resetPathTracer();
-        }
-
-        function onWindowResize() {
-            camera.aspect = window.innerWidth / window.innerHeight;
-            camera.updateProjectionMatrix();
-            renderer.setSize(window.innerWidth, window.innerHeight);
-            currentScale = -1;
-            onInteract();
-        }
-
-        // ---- GUI ----
-        function applyPreset(name) {
-            const p = PRESETS[name];
-            if (!p) return;
-            params.targetFPS   = p.targetFPS;
-            params.bounces     = p.bounces;
-            params.filterGlossy = p.filterGlossy;
-            ptRenderer.material.filterGlossyFactor = params.filterGlossy;
-            // Refresh GUI controllers
-            for (const ctrl of gui.controllersRecursive()) ctrl.updateDisplay();
-            onInteract();
-        }
-
-        let gui;
-        function setupGUI() {
-            gui = new GUI();
-
-            // Preset selector
-            const presetFolder = gui.addFolder('Preset');
-            presetFolder.add(params, 'preset', Object.keys(PRESETS)).name('Quality Preset')
-                .onChange(v => applyPreset(v));
-            presetFolder.open();
-
-            const sun = gui.addFolder('Sun & Sky');
-            sun.add(params, 'sunAzimuth', 0, 360, 1).name('Sun Azimuth').onChange(updateEnvironment);
-            sun.add(params, 'sunElevation', -10, 90, 1).name('Sun Elevation').onChange(updateEnvironment);
-            sun.add(params, 'sunSize', 0.5, 30, 0.5).name('Shadow Softness').onChange(updateEnvironment);
-            sun.add(params, 'sunIntensity', 0, 60, 0.5).name('Sun Intensity').onChange(updateEnvironment);
-            sun.addColor(params, 'sunColor').name('Sun Color').onChange(updateEnvironment);
-            sun.addColor(params, 'skyZenith').name('Sky Top').onChange(updateEnvironment);
-            sun.addColor(params, 'skyHorizon').name('Sky Horizon').onChange(updateEnvironment);
-            sun.addColor(params, 'groundColor').name('Ground').onChange(updateEnvironment);
-            sun.add(params, 'envIntensity', 0, 3, 0.05).name('Env Intensity').onChange(updateEnvironment);
-            sun.add(params, 'debugDisableEnv').name('Debug: Disable Custom Env').onChange(updateEnvironment);
-
-            const render = gui.addFolder('Render');
-            render.add(params, 'bounces', 1, 16, 1).onChange(() => { ptRenderer.bounces = params.bounces; onInteract(); });
-            render.add(params, 'maxSamples', 32, 4096, 16);
-            render.add(params, 'targetFPS', 10, 60, 5).name('Target FPS');
-            render.add(params, 'resolutionScale', 0.25, 1.0, 0.05).name('Resolution').onChange(onInteract);
-            render.add(params, 'filterGlossy', 0, 1, 0.05).name('Glossy Filter')
-                  .onChange(() => { ptRenderer.material.filterGlossyFactor = params.filterGlossy; onInteract(); });
-            render.add(renderer, 'toneMappingExposure', 0.2, 2.0, 0.05).name('Exposure').onChange(onInteract);
-            render.add(params, 'denoiseEnabled').name('A-Trous Denoise').onChange(v => {
-                denoiseEnabled = v;
-                onInteract();
-            });
-
-            const obj = gui.addFolder('Objects');
-            obj.add(params, 'addSphere').name('Add Sphere');
-            obj.add(params, 'addBox').name('Add Box');
-            obj.add(params, 'loadModel').name('Load OBJ/GLTF');
-        }
-
-        // ---- tiling ----
-        function setGrid(n) {
-            if (n === appliedGrid) return;
-            appliedGrid = n;
-            ptRenderer.tiles.set(n, n);
-        }
-
-        // Smarter adaptive tiles: range 1..16, hysteresis to avoid oscillation
-        const TILE_MAX = 16;
-        const TILE_MIN = 1;
-        let hysteresisUp   = 0;  // consecutive frames over budget
-        let hysteresisDown = 0;  // consecutive frames under budget
-
-        function adaptTiles() {
-            const targetMs = 1000 / params.targetFPS;
-            if (avgDt > targetMs * 1.15) {
-                hysteresisUp++;  hysteresisDown = 0;
-                if (hysteresisUp >= 2 && idleGrid < TILE_MAX) { idleGrid++; hysteresisUp = 0; }
-            } else if (avgDt < targetMs * 0.75) {
-                hysteresisDown++; hysteresisUp = 0;
-                if (hysteresisDown >= 3 && idleGrid > TILE_MIN) { idleGrid--; hysteresisDown = 0; }
-            } else {
-                hysteresisUp = 0; hysteresisDown = 0;
-            }
-        }
-
-        // ---- main loop ----
-        function animate() {
-            requestAnimationFrame(animate);
-
-            const now = performance.now();
-            const dt  = now - lastFrame;
-            lastFrame = now;
-            avgDt = avgDt < 0 ? dt : avgDt * 0.9 + dt * 0.1;
-
-            if (renderNeedsUpdate) { updatePTScene(); renderNeedsUpdate = false; }
-
-            const materialReady = !ptRenderer.material.isCompiling;
-            if (!materialReady) {
-                wasCompiling = true;
-                document.getElementById('hud-status-val').innerText = 'Compiling…';
-                renderer.setRenderTarget(null);
-                renderer.render(displayScene, displayCamera);
-                return;
-            }
-            if (wasCompiling) {
-                wasCompiling = false;
-                resetPathTracer();
-            }
-
-            const interacting = (now - lastInteraction) < INTERACT_COOLDOWN;
-            const sampleInt   = Math.floor(ptRenderer.samples);
-            const converged   = (!interacting && sampleInt >= params.maxSamples);
-
-            // --- Dynamic resolution with ramp ---
-            let targetScale;
-            if (interacting) {
-                targetScale = Math.min(INTERACT_SCALE, params.resolutionScale);
-            } else {
-                // Resolution ramp: first RAMP_SAMPLE_THRESHOLD samples at RAMP_SCALE
-                if (sampleInt < RAMP_SAMPLE_THRESHOLD) {
-                    targetScale = Math.min(RAMP_SCALE, params.resolutionScale);
-                } else {
-                    targetScale = params.resolutionScale;
-                }
-            }
-            applyScale(targetScale);
-
-            // --- Progressive bounces: lower bounces for early samples ---
-            if (!interacting) {
-                const bouncesNow = sampleInt < 16 ? Math.min(2, params.bounces) : params.bounces;
-                if (ptRenderer.bounces !== bouncesNow) ptRenderer.bounces = bouncesNow;
-            } else {
-                ptRenderer.bounces = params.bounces;
-            }
-
-            // --- Tiling ---
-            if (interacting) {
-                setGrid(1);
-            } else if (sampleInt !== prevSampleInt) {
-                adaptTiles();
-                setGrid(idleGrid);
-            }
-            prevSampleInt = sampleInt;
-
-            // --- Path trace ---
-            if (!converged) {
-                camera.updateMatrixWorld();
-                ptRenderer.setCamera(camera);
-                ptRenderer.update();
-            }
-
-            // --- Denoise ---
-            const samples = Math.floor(ptRenderer.samples);
-            applyDenoiser(samples);
-
-            // --- Display ---
-            renderer.setRenderTarget(null);
-            renderer.render(displayScene, displayCamera);
-
-            // --- HUD update ---
-            const fps     = Math.round(1000 / Math.max(avgDt, 1));
-            const str     = denoiseStrength(samples);
-            const strPct  = Math.round(str * 100);
-
-            document.getElementById('hud-spp').innerText         = samples;
-            document.getElementById('hud-fps-val').innerText     = fps;
-            document.getElementById('hud-denoise-val').innerText = params.denoiseEnabled ? strPct + '%' : 'off';
-
-            let statusText;
-            if (converged)    statusText = 'done';
-            else if (interacting) statusText = 'preview';
-            else              statusText = `${idleGrid}×${idleGrid} tiles`;
-            document.getElementById('hud-status-val').innerText = statusText;
-
-            // Progress bar
-            const pct = Math.min((samples / params.maxSamples) * 100, 100);
-            document.getElementById('progress-bar').style.width = pct + '%';
-        }
+    // ── HUD ──────────────────────────────────────────────────────────────────
+    updateHUD(spp, interacting, converged);
+}
     </script>
 </body>
 </html>
