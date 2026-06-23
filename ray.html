@@ -1,727 +1,936 @@
 <!DOCTYPE html>
-<html lang="ko">
+<html lang="en">
 <head>
-    <meta charset="UTF-8">
-    <title>Path Tracer</title>
-    <style>
-        * { box-sizing: border-box; }
-        body { margin: 0; overflow: hidden; background: #09090b; font-family: ui-sans-serif, system-ui, sans-serif; }
-        canvas { display: block; width: 100vw; height: 100vh; }
-
-        #hud {
-            position: absolute; top: 14px; left: 16px; z-index: 10;
-            pointer-events: none; display: flex; flex-direction: column; gap: 5px;
-        }
-        #hud-title { font-size: 14px; font-weight: 700; color: #fff; letter-spacing: .3px;
-                     text-shadow: 0 1px 4px rgba(0,0,0,.8); }
-        #hud-row { display: flex; gap: 5px; flex-wrap: wrap; }
-        .chip {
-            background: rgba(8,8,12,.65); border: 1px solid rgba(255,255,255,.1);
-            backdrop-filter: blur(8px); border-radius: 5px; padding: 3px 9px;
-            font-size: 11px; color: #d4d8e8; font-variant-numeric: tabular-nums;
-            display: flex; align-items: center; gap: 4px;
-        }
-        .chip .k { opacity: .5; font-size: 9px; text-transform: uppercase; letter-spacing: .6px; }
-        .chip .v { font-weight: 600; }
-        .v.g { color: #4ade80; }
-        .v.b { color: #60a5fa; }
-        .v.a { color: #fbbf24; }
-
-        #prog-wrap { position: absolute; bottom: 0; left: 0; right: 0; height: 3px;
-                     background: rgba(255,255,255,.06); z-index: 10; pointer-events: none; }
-        #prog-bar  { height: 100%; width: 0%;
-                     background: linear-gradient(90deg,#3b82f6,#06b6d4);
-                     transition: width .3s ease; }
-        #file-input { display: none; }
-    </style>
-
-    <script type="importmap">
-    {
-        "imports": {
-            "three":                  "https://unpkg.com/three@0.160.0/build/three.module.js",
-            "three/addons/":          "https://unpkg.com/three@0.160.0/examples/jsm/",
-            "three/examples/jsm/":    "https://unpkg.com/three@0.160.0/examples/jsm/",
-            "three-mesh-bvh":         "https://unpkg.com/three-mesh-bvh@0.7.0/build/index.module.js",
-            "three-gpu-pathtracer":   "https://unpkg.com/three-gpu-pathtracer@0.0.21/build/index.module.js",
-            "lil-gui":                "https://unpkg.com/lil-gui@0.19.1/dist/lil-gui.esm.min.js"
-        }
-    }
-    </script>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>WebGPU Path Tracer</title>
+<style>
+  html, body { margin: 0; height: 100%; background: #0b0d12; overflow: hidden; font-family: ui-monospace, Menlo, Consolas, monospace; color: #cfd6e4; }
+  #c { width: 100vw; height: 100vh; display: block; }
+  #err { position: fixed; inset: 0; display: none; align-items: center; justify-content: center; flex-direction: column; gap: 14px; padding: 40px; text-align: center; background: #0b0d12; z-index: 100; }
+  #err h1 { color: #ff6b6b; font-size: 22px; margin: 0; }
+  #err p { max-width: 560px; line-height: 1.5; color: #9aa6bc; }
+  #hud { position: fixed; left: 12px; top: 12px; display: flex; gap: 8px; flex-wrap: wrap; z-index: 10; pointer-events: none; }
+  .chip { background: rgba(20,24,33,0.82); border: 1px solid rgba(120,140,180,0.25); border-radius: 999px; padding: 5px 12px; font-size: 12px; letter-spacing: 0.3px; backdrop-filter: blur(8px); }
+  .chip b { color: #7fd1ff; font-weight: 600; }
+</style>
 </head>
 <body>
-    <div id="hud">
-        <div id="hud-title">Web Path Tracer</div>
-        <div id="hud-row">
-            <div class="chip"><span class="k">SPP</span><span class="v g" id="v-spp">0</span></div>
-            <div class="chip"><span class="k">FPS</span><span class="v g" id="v-fps">—</span></div>
-            <div class="chip"><span class="k">RES</span><span class="v b" id="v-res">—</span></div>
-            <div class="chip"><span class="k">Denoise</span><span class="v b" id="v-dn">—</span></div>
-            <div class="chip"><span class="v a" id="v-st">init</span></div>
-        </div>
-    </div>
-    <div id="prog-wrap"><div id="prog-bar"></div></div>
-    <input type="file" id="file-input" accept=".gltf,.glb,.obj" />
+<canvas id="c"></canvas>
+<div id="hud">
+  <div class="chip">SPP <b id="hSpp">0</b></div>
+  <div class="chip">FPS <b id="hFps">0</b></div>
+  <div class="chip">RES <b id="hRes">-</b></div>
+  <div class="chip" id="hStatus">init</div>
+</div>
+<div id="err">
+  <h1>WebGPU not available</h1>
+  <p>This path tracer requires WebGPU. Please use a recent version of Chrome or Edge (or another browser with WebGPU enabled). On Linux you may need to launch with <code>--enable-unsafe-webgpu</code>.</p>
+</div>
 
-    <script type="module">
+<script type="importmap">
+{
+  "imports": {
+    "three": "https://unpkg.com/three@0.160.0/build/three.module.js",
+    "three/addons/": "https://unpkg.com/three@0.160.0/examples/jsm/",
+    "three/examples/jsm/": "https://unpkg.com/three@0.160.0/examples/jsm/",
+    "three-mesh-bvh": "https://unpkg.com/three-mesh-bvh@0.7.0/build/index.module.js",
+    "lil-gui": "https://unpkg.com/lil-gui@0.19.1/dist/lil-gui.esm.min.js"
+  }
+}
+</script>
+
+<script type="module">
 import * as THREE from 'three';
-import { OrbitControls }   from 'three/addons/controls/OrbitControls.js';
-import { GLTFLoader }      from 'three/addons/loaders/GLTFLoader.js';
-import { OBJLoader }       from 'three/addons/loaders/OBJLoader.js';
-import GUI                 from 'lil-gui';
-import { computeBoundsTree, disposeBoundsTree } from 'three-mesh-bvh';
-import { PathTracingRenderer, PhysicalPathTracingMaterial, PathTracingSceneGenerator }
-    from 'three-gpu-pathtracer';
+import { OrbitControls } from 'three/addons/controls/OrbitControls.js';
+import { OBJLoader } from 'three/addons/loaders/OBJLoader.js';
+import { GLTFLoader } from 'three/addons/loaders/GLTFLoader.js';
+import GUI from 'lil-gui';
 
-window.THREE = THREE;
-THREE.BufferGeometry.prototype.computeBoundsTree  = computeBoundsTree;
-THREE.BufferGeometry.prototype.disposeBoundsTree  = disposeBoundsTree;
+const errEl = document.getElementById('err');
+function fatal(title, msg) {
+  errEl.style.display = 'flex';
+  errEl.querySelector('h1').textContent = title;
+  if (msg) errEl.querySelector('p').textContent = msg;
+  throw new Error(title + (msg ? ': ' + msg : ''));
+}
 
-// ─────────────────────────────────────────────────────────────────────────────
-//  CONSTANTS
-// ─────────────────────────────────────────────────────────────────────────────
-const INTERACT_SCALE = 0.30;   // resolution fraction during camera drag
-const INTERACT_MS    = 150;    // ms of stillness before idle mode
-const SCALE_MIN      = 0.25;   // minimum idle path-trace resolution
-// Progressive bounces: [sppThreshold, bounceCount] — applied in order, last match wins
-const BOUNCE_RAMP = [[0, 2], [10, 4], [28, 6]];
+if (!navigator.gpu) fatal('WebGPU not available');
 
-// ─────────────────────────────────────────────────────────────────────────────
-//  STATE
-// ─────────────────────────────────────────────────────────────────────────────
-let camera, renderer, ptRenderer, ptSceneGenerator;
-let displayScene, displayCamera, displayMesh;
-let orbitControls, envTex;
-let sceneMeshes   = [];
-let rebuildNeeded = false;
-let wasCompiling  = false;
+const canvas = document.getElementById('c');
+const hSpp = document.getElementById('hSpp');
+const hFps = document.getElementById('hFps');
+const hRes = document.getElementById('hRes');
+const hStatus = document.getElementById('hStatus');
 
-// timing
-let lastFrameT = performance.now();
-let avgDt      = -1;
-let steadyDt   = -1;   // EMA of dt measured during idle non-converged frames
+// ---------------------------------------------------------------------------
+// Device
+// ---------------------------------------------------------------------------
+const adapter = await navigator.gpu.requestAdapter({ powerPreference: 'high-performance' });
+if (!adapter) fatal('No WebGPU adapter');
+const device = await adapter.requestDevice();
+device.lost.then((info) => { if (info.reason !== 'destroyed') fatal('WebGPU device lost', info.message || ''); });
 
-// adaptive resolution
-// Key design:  tiles = 1×1 always  →  1 full sample per frame  →  SPP/sec = FPS
-// idleScale is computed from measured performance and applied at run boundaries.
-let idleScale     = 0.75;
-let currentScale  = -1;
-let lastInteractT = -1e9;
-let prevInteracting = false;
+const ctx = canvas.getContext('webgpu');
+const format = navigator.gpu.getPreferredCanvasFormat();
+ctx.configure({ device, format, alphaMode: 'opaque' });
 
-// denoiser ping-pong targets
-let pingRT = null, pongRT = null;
-let denoiserScene, denoiserCamera, denoiserMesh, denoiserMat;
+// ---------------------------------------------------------------------------
+// Three.js (geometry helpers only)
+// ---------------------------------------------------------------------------
+const camera = new THREE.PerspectiveCamera(45, 1, 0.01, 1000);
+camera.position.set(6, 4.2, 8);
 
-let gui;
+const controls = new OrbitControls(camera, canvas);
+controls.target.set(0, 1, 0);
+controls.enableDamping = true;
+controls.dampingFactor = 0.08;
+controls.update();
 
-// ─────────────────────────────────────────────────────────────────────────────
-//  PARAMS & PRESETS
-// ─────────────────────────────────────────────────────────────────────────────
+const scene = new THREE.Scene();
+let triList = [];
+let materials = [];
+const materialMap = new Map();
+
+function registerMaterial(mat) {
+  if (materialMap.has(mat)) return materialMap.get(mat);
+  const c = mat.color || { r: 0.8, g: 0.8, b: 0.8 };
+  const e = mat.emissive || { r: 0, g: 0, b: 0 };
+  const ei = (mat.emissiveIntensity ?? 1.0);
+  const m = {
+    baseColor: [c.r, c.g, c.b],
+    metalness: mat.metalness ?? 0.0,
+    roughness: Math.max(0.001, mat.roughness ?? 1.0),
+    emission: [e.r * ei, e.g * ei, e.b * ei],
+    transmission: mat.transmission ?? 0.0,
+    ior: mat.ior ?? 1.5,
+  };
+  const idx = materials.length;
+  materials.push(m);
+  materialMap.set(mat, idx);
+  return idx;
+}
+
+const _v0 = new THREE.Vector3(), _v1 = new THREE.Vector3(), _v2 = new THREE.Vector3();
+const _n0 = new THREE.Vector3(), _n1 = new THREE.Vector3(), _n2 = new THREE.Vector3();
+const _nm = new THREE.Matrix3();
+
+function extractTriangles(mesh) {
+  mesh.updateMatrixWorld(true);
+  const geo = mesh.geometry;
+  const mat = Array.isArray(mesh.material) ? mesh.material[0] : mesh.material;
+  const matIdx = registerMaterial(mat);
+  const pos = geo.attributes.position;
+  if (!pos) return;
+  const nrm = geo.attributes.normal;
+  const idx = geo.index;
+  const wm = mesh.matrixWorld;
+  _nm.getNormalMatrix(wm);
+  const count = idx ? idx.count : pos.count;
+  const gi = (i) => idx ? idx.getX(i) : i;
+  for (let i = 0; i < count; i += 3) {
+    const a = gi(i), b = gi(i + 1), c = gi(i + 2);
+    _v0.fromBufferAttribute(pos, a).applyMatrix4(wm);
+    _v1.fromBufferAttribute(pos, b).applyMatrix4(wm);
+    _v2.fromBufferAttribute(pos, c).applyMatrix4(wm);
+    if (nrm) {
+      _n0.fromBufferAttribute(nrm, a).applyMatrix3(_nm).normalize();
+      _n1.fromBufferAttribute(nrm, b).applyMatrix3(_nm).normalize();
+      _n2.fromBufferAttribute(nrm, c).applyMatrix3(_nm).normalize();
+    } else {
+      _n0.subVectors(_v1, _v0).cross(_n2.subVectors(_v2, _v0)).normalize();
+      _n1.copy(_n0); _n2.copy(_n0);
+    }
+    triList.push({
+      v0: [_v0.x, _v0.y, _v0.z], v1: [_v1.x, _v1.y, _v1.z], v2: [_v2.x, _v2.y, _v2.z],
+      n0: [_n0.x, _n0.y, _n0.z], n1: [_n1.x, _n1.y, _n1.z], n2: [_n2.x, _n2.y, _n2.z],
+      matIdx,
+    });
+  }
+}
+
+function buildDefaultScene() {
+  triList = []; materials = []; materialMap.clear();
+  while (scene.children.length) scene.remove(scene.children[0]);
+
+  const floor = new THREE.Mesh(
+    new THREE.BoxGeometry(40, 0.5, 40),
+    new THREE.MeshStandardMaterial({ color: 0xb8bcc4, roughness: 0.08, metalness: 0.0 })
+  );
+  floor.position.y = -0.25;
+  scene.add(floor);
+
+  const mirror = new THREE.Mesh(
+    new THREE.SphereGeometry(1.3, 64, 48),
+    new THREE.MeshStandardMaterial({ color: 0xffffff, metalness: 1.0, roughness: 0.02 })
+  );
+  mirror.position.set(-3, 1.3, 0);
+  scene.add(mirror);
+
+  const gold = new THREE.Mesh(
+    new THREE.SphereGeometry(1.3, 64, 48),
+    new THREE.MeshStandardMaterial({ color: 0xffc864, metalness: 1.0, roughness: 0.18 })
+  );
+  gold.position.set(0, 1.3, 0);
+  scene.add(gold);
+
+  const glassMat = new THREE.MeshPhysicalMaterial({ color: 0xffffff, transmission: 1.0, ior: 1.5, roughness: 0.0, metalness: 0.0 });
+  const glass = new THREE.Mesh(new THREE.SphereGeometry(1.3, 64, 48), glassMat);
+  glass.position.set(3, 1.3, 0);
+  scene.add(glass);
+
+  const teal = new THREE.Mesh(
+    new THREE.BoxGeometry(1.6, 1.6, 1.6),
+    new THREE.MeshStandardMaterial({ color: 0x2f9e8f, roughness: 0.55, metalness: 0.0 })
+  );
+  teal.position.set(0.2, 0.8, -3.2);
+  teal.rotation.y = 0.5;
+  scene.add(teal);
+
+  scene.traverse((o) => { if (o.isMesh) extractTriangles(o); });
+}
+
+// ---------------------------------------------------------------------------
+// BVH (longest axis, centroid median split)
+// ---------------------------------------------------------------------------
+function buildBVH(tris) {
+  const nodes = [];
+  const order = tris.map((_, i) => i);
+  const cent = tris.map((t) => [
+    (t.v0[0] + t.v1[0] + t.v2[0]) / 3,
+    (t.v0[1] + t.v1[1] + t.v2[1]) / 3,
+    (t.v0[2] + t.v1[2] + t.v2[2]) / 3,
+  ]);
+
+  function triBounds(ti, mn, mx) {
+    const t = tris[ti];
+    for (const v of [t.v0, t.v1, t.v2]) {
+      for (let k = 0; k < 3; k++) { mn[k] = Math.min(mn[k], v[k]); mx[k] = Math.max(mx[k], v[k]); }
+    }
+  }
+
+  function build(start, end, depth) {
+    const ni = nodes.length;
+    const mn = [Infinity, Infinity, Infinity], mx = [-Infinity, -Infinity, -Infinity];
+    for (let i = start; i < end; i++) triBounds(order[i], mn, mx);
+    const node = { mn, mx, leftFirst: start, triCount: end - start };
+    nodes.push(node);
+
+    const n = end - start;
+    if (n <= 4 || depth >= 24) return ni;
+
+    const cmn = [Infinity, Infinity, Infinity], cmx = [-Infinity, -Infinity, -Infinity];
+    for (let i = start; i < end; i++) {
+      const c = cent[order[i]];
+      for (let k = 0; k < 3; k++) { cmn[k] = Math.min(cmn[k], c[k]); cmx[k] = Math.max(cmx[k], c[k]); }
+    }
+    let axis = 0;
+    let ext = cmx[0] - cmn[0];
+    if (cmx[1] - cmn[1] > ext) { ext = cmx[1] - cmn[1]; axis = 1; }
+    if (cmx[2] - cmn[2] > ext) { ext = cmx[2] - cmn[2]; axis = 2; }
+    if (ext <= 1e-9) return ni;
+
+    const mid = (cmn[axis] + cmx[axis]) * 0.5;
+    let i = start, j = end - 1;
+    while (i <= j) {
+      if (cent[order[i]][axis] < mid) i++;
+      else { const tmp = order[i]; order[i] = order[j]; order[j] = tmp; j--; }
+    }
+    let split = i;
+    if (split === start || split === end) split = (start + end) >> 1;
+
+    node.triCount = 0;
+    const left = build(start, split, depth + 1);
+    build(split, end, depth + 1);
+    node.leftFirst = left;
+    return ni;
+  }
+
+  if (tris.length > 0) build(0, tris.length, 0);
+  else nodes.push({ mn: [0, 0, 0], mx: [0, 0, 0], leftFirst: 0, triCount: 0 });
+
+  const nodeBuf = new ArrayBuffer(nodes.length * 32);
+  const nf = new Float32Array(nodeBuf);
+  const nu = new Uint32Array(nodeBuf);
+  for (let i = 0; i < nodes.length; i++) {
+    const o = i * 8;
+    const nd = nodes[i];
+    nf[o + 0] = nd.mn[0]; nf[o + 1] = nd.mn[1]; nf[o + 2] = nd.mn[2]; nu[o + 3] = nd.leftFirst >>> 0;
+    nf[o + 4] = nd.mx[0]; nf[o + 5] = nd.mx[1]; nf[o + 6] = nd.mx[2]; nu[o + 7] = nd.triCount >>> 0;
+  }
+  const reordered = order.map((i) => tris[i]);
+  return { nodeBuf, nodeCount: nodes.length, tris: reordered };
+}
+
+function packTriangles(tris) {
+  const buf = new ArrayBuffer(Math.max(1, tris.length) * 96);
+  const f = new Float32Array(buf);
+  const u = new Uint32Array(buf);
+  for (let i = 0; i < tris.length; i++) {
+    const o = i * 24;
+    const t = tris[i];
+    f[o + 0] = t.v0[0]; f[o + 1] = t.v0[1]; f[o + 2] = t.v0[2];
+    f[o + 4] = t.v1[0]; f[o + 5] = t.v1[1]; f[o + 6] = t.v1[2];
+    f[o + 8] = t.v2[0]; f[o + 9] = t.v2[1]; f[o + 10] = t.v2[2]; u[o + 11] = t.matIdx >>> 0;
+    f[o + 12] = t.n0[0]; f[o + 13] = t.n0[1]; f[o + 14] = t.n0[2];
+    f[o + 16] = t.n1[0]; f[o + 17] = t.n1[1]; f[o + 18] = t.n1[2];
+    f[o + 20] = t.n2[0]; f[o + 21] = t.n2[1]; f[o + 22] = t.n2[2];
+  }
+  return buf;
+}
+
+function packMaterials(mats) {
+  const buf = new ArrayBuffer(Math.max(1, mats.length) * 48);
+  const f = new Float32Array(buf);
+  for (let i = 0; i < mats.length; i++) {
+    const o = i * 12;
+    const m = mats[i];
+    f[o + 0] = m.baseColor[0]; f[o + 1] = m.baseColor[1]; f[o + 2] = m.baseColor[2]; f[o + 3] = m.metalness;
+    f[o + 4] = m.emission[0]; f[o + 5] = m.emission[1]; f[o + 6] = m.emission[2]; f[o + 7] = m.roughness;
+    f[o + 8] = m.transmission; f[o + 9] = m.ior;
+  }
+  return buf;
+}
+
+// ---------------------------------------------------------------------------
+// GPU scene buffers
+// ---------------------------------------------------------------------------
+let bvhBuffer, triBuffer, matBuffer;
+
+function uploadScene() {
+  hStatus.textContent = 'building BVH';
+  let bvh;
+  try {
+    bvh = buildBVH(triList);
+  } catch (e) {
+    hStatus.textContent = 'BVH error';
+    console.error(e);
+    return;
+  }
+  const triBuf = packTriangles(bvh.tris);
+  const matBuf = packMaterials(materials.length ? materials : [{ baseColor: [0.8, 0.8, 0.8], metalness: 0, roughness: 1, emission: [0, 0, 0], transmission: 0, ior: 1.5 }]);
+
+  if (bvhBuffer) bvhBuffer.destroy();
+  if (triBuffer) triBuffer.destroy();
+  if (matBuffer) matBuffer.destroy();
+
+  bvhBuffer = device.createBuffer({ size: bvh.nodeBuf.byteLength, usage: GPUBufferUsage.STORAGE | GPUBufferUsage.COPY_DST });
+  device.queue.writeBuffer(bvhBuffer, 0, bvh.nodeBuf);
+  triBuffer = device.createBuffer({ size: triBuf.byteLength, usage: GPUBufferUsage.STORAGE | GPUBufferUsage.COPY_DST });
+  device.queue.writeBuffer(triBuffer, 0, triBuf);
+  matBuffer = device.createBuffer({ size: matBuf.byteLength, usage: GPUBufferUsage.STORAGE | GPUBufferUsage.COPY_DST });
+  device.queue.writeBuffer(matBuffer, 0, matBuf);
+
+  hStatus.textContent = `tris ${triList.length}`;
+  rebuildComputeBindGroup();
+  resetAccum();
+}
+
+// ---------------------------------------------------------------------------
+// WGSL: compute path tracer
+// ---------------------------------------------------------------------------
+const computeWGSL = /* wgsl */`
+struct Uniforms {
+  invProj: mat4x4f,
+  invView: mat4x4f,
+  cameraPos: vec3f, frame: f32,
+  width: u32, height: u32, bounces: u32, maxSamples: u32,
+  envIntensity: f32, sunAzimuth: f32, sunElevation: f32, sunSize: f32,
+  sunIntensity: f32, p0: f32, p1: f32, p2: f32,
+  skyZenith: vec3f, p3: f32,
+  skyHorizon: vec3f, p4: f32,
+  groundColor: vec3f, p5: f32,
+  sunColor: vec3f, p6: f32,
+};
+
+struct BVHNode { aabbMin: vec3f, leftFirst: u32, aabbMax: vec3f, triCount: u32 };
+struct Triangle {
+  v0: vec3f, pad0: f32,
+  v1: vec3f, pad1: f32,
+  v2: vec3f, matIdx: u32,
+  n0: vec3f, pad3: f32,
+  n1: vec3f, pad4: f32,
+  n2: vec3f, pad5: f32,
+};
+struct Material {
+  baseColor: vec3f, metalness: f32,
+  emission: vec3f, roughness: f32,
+  transmission: f32, ior: f32, mp0: f32, mp1: f32,
+};
+
+@group(0) @binding(0) var<uniform> uniforms: Uniforms;
+@group(0) @binding(1) var<storage, read> bvhNodes: array<BVHNode>;
+@group(0) @binding(2) var<storage, read> tris: array<Triangle>;
+@group(0) @binding(3) var<storage, read> mats: array<Material>;
+@group(0) @binding(4) var<storage, read_write> accum: array<vec4f>;
+@group(0) @binding(5) var outTex: texture_storage_2d<rgba16float, write>;
+
+const PI = 3.14159265359;
+const EPS = 1e-4;
+
+struct Ray { o: vec3f, d: vec3f, tmin: f32, tmax: f32 };
+struct HitInfo { tri: i32, t: f32, u: f32, v: f32 };
+
+fn pcg(v: u32) -> u32 {
+  var s = v * 747796405u + 2891336453u;
+  var w = ((s >> ((s >> 28u) + 4u)) ^ s) * 277803737u;
+  return (w >> 22u) ^ w;
+}
+fn rand(seed: ptr<function,u32>) -> f32 {
+  *seed = pcg(*seed);
+  return f32(*seed) / 4294967296.0;
+}
+fn rand2(s: ptr<function,u32>) -> vec2f { return vec2f(rand(s), rand(s)); }
+
+fn generateRay(px: vec2u, s: ptr<function,u32>) -> Ray {
+  let jitter = rand2(s) - 0.5;
+  let uv = (vec2f(px) + jitter + 0.5) / vec2f(f32(uniforms.width), f32(uniforms.height));
+  let ndc = uv * 2.0 - 1.0;
+  var clipPos = vec4f(ndc.x, -ndc.y, -1.0, 1.0);
+  var viewDir4 = uniforms.invProj * clipPos;
+  viewDir4 = vec4f(viewDir4.xyz / viewDir4.w, 0.0);
+  let worldDir = normalize((uniforms.invView * viewDir4).xyz);
+  return Ray(uniforms.cameraPos, worldDir, EPS, 1e30);
+}
+
+fn hitAABB(ray: Ray, mn: vec3f, mx: vec3f, t: f32) -> bool {
+  let inv = 1.0 / ray.d;
+  let t0 = (mn - ray.o) * inv;
+  let t1 = (mx - ray.o) * inv;
+  let tsm = min(t0, t1);
+  let tbg = max(t0, t1);
+  let tnear = max(max(tsm.x, tsm.y), tsm.z);
+  let tfar = min(min(tbg.x, tbg.y), tbg.z);
+  return tnear <= tfar && tfar >= ray.tmin && tnear <= t;
+}
+
+fn hitTriangle(ray: Ray, ti: u32, best: ptr<function,HitInfo>) {
+  let tr = tris[ti];
+  let e1 = tr.v1 - tr.v0;
+  let e2 = tr.v2 - tr.v0;
+  let p = cross(ray.d, e2);
+  let det = dot(e1, p);
+  if abs(det) < 1e-9 { return; }
+  let invDet = 1.0 / det;
+  let tv = ray.o - tr.v0;
+  let u = dot(tv, p) * invDet;
+  if u < 0.0 || u > 1.0 { return; }
+  let q = cross(tv, e1);
+  let v = dot(ray.d, q) * invDet;
+  if v < 0.0 || u + v > 1.0 { return; }
+  let t = dot(e2, q) * invDet;
+  if t > ray.tmin && t < (*best).t {
+    (*best).t = t; (*best).tri = i32(ti); (*best).u = u; (*best).v = v;
+  }
+}
+
+fn intersect(ray: Ray) -> HitInfo {
+  var best = HitInfo(-1, ray.tmax, 0.0, 0.0);
+  var stack: array<u32, 32>;
+  var sp = 0u;
+  stack[sp] = 0u; sp = sp + 1u;
+  loop {
+    if sp == 0u { break; }
+    sp = sp - 1u;
+    let n = bvhNodes[stack[sp]];
+    if !hitAABB(ray, n.aabbMin, n.aabbMax, best.t) { continue; }
+    if n.triCount > 0u {
+      for (var i = 0u; i < n.triCount; i = i + 1u) {
+        hitTriangle(ray, n.leftFirst + i, &best);
+      }
+    } else {
+      if sp < 30u {
+        stack[sp] = n.leftFirst; sp = sp + 1u;
+        stack[sp] = n.leftFirst + 1u; sp = sp + 1u;
+      }
+    }
+  }
+  return best;
+}
+
+fn buildBasis(n: vec3f) -> mat3x3f {
+  var t: vec3f;
+  if abs(n.x) > 0.1 { t = normalize(cross(vec3f(0.0,1.0,0.0), n)); }
+  else { t = normalize(cross(vec3f(1.0,0.0,0.0), n)); }
+  let b = cross(n, t);
+  return mat3x3f(t, b, n);
+}
+
+fn cosineSample(n: vec3f, s: ptr<function,u32>) -> vec3f {
+  let r = rand2(s);
+  let phi = 2.0 * PI * r.x;
+  let cosT = sqrt(1.0 - r.y);
+  let sinT = sqrt(r.y);
+  let local = vec3f(cos(phi) * sinT, sin(phi) * sinT, cosT);
+  return buildBasis(n) * local;
+}
+
+fn ggxSample(n: vec3f, rough: f32, s: ptr<function,u32>) -> vec3f {
+  let a = max(rough * rough, 1e-3);
+  let r = rand2(s);
+  let phi = 2.0 * PI * r.x;
+  let cosT = sqrt((1.0 - r.y) / (1.0 + (a*a - 1.0) * r.y));
+  let sinT = sqrt(max(0.0, 1.0 - cosT*cosT));
+  let local = vec3f(cos(phi) * sinT, sin(phi) * sinT, cosT);
+  return buildBasis(n) * local;
+}
+
+fn fresnelSchlick(cosT: f32, f0: vec3f) -> vec3f {
+  let m = clamp(1.0 - cosT, 0.0, 1.0);
+  return f0 + (vec3f(1.0) - f0) * (m*m*m*m*m);
+}
+
+fn sunDir() -> vec3f {
+  let az = uniforms.sunAzimuth;
+  let el = uniforms.sunElevation;
+  return normalize(vec3f(cos(el) * cos(az), sin(el), cos(el) * sin(az)));
+}
+
+fn sky(dir: vec3f) -> vec3f {
+  let cy = dir.y;
+  var col: vec3f;
+  if cy >= 0.0 {
+    let t = pow(max(cy, 0.0), 0.45);
+    col = mix(uniforms.skyHorizon, uniforms.skyZenith, t);
+    let haze = exp(-cy*cy*120.0) * 0.25;
+    col = col + uniforms.skyHorizon * haze;
+  } else {
+    let t = pow(max(-cy, 0.0), 0.5);
+    col = mix(uniforms.skyHorizon, uniforms.groundColor, clamp(t*1.5, 0.0, 1.0));
+  }
+  let sd = sunDir();
+  let c = dot(dir, sd);
+  let size = max(uniforms.sunSize, 1e-3);
+  let ang = acos(clamp(c, -1.0, 1.0));
+  if ang < size {
+    let limb = 1.0 - 0.6 * (ang / size);
+    col = col + uniforms.sunColor * uniforms.sunIntensity * limb;
+  } else {
+    let glow = exp(-(ang - size) * 30.0) * 0.4;
+    col = col + uniforms.sunColor * uniforms.sunIntensity * glow;
+  }
+  return max(col * uniforms.envIntensity, vec3f(0.0));
+}
+
+fn shadeNormal(h: HitInfo) -> vec3f {
+  let tr = tris[h.tri];
+  let w = 1.0 - h.u - h.v;
+  var n = normalize(tr.n0 * w + tr.n1 * h.u + tr.n2 * h.v);
+  let gn = normalize(cross(tr.v1 - tr.v0, tr.v2 - tr.v0));
+  if dot(n, gn) < 0.0 { n = -n; }
+  return n;
+}
+
+fn pathTrace(startRay: Ray, seed0: u32) -> vec3f {
+  var ray = startRay;
+  var s = seed0;
+  var color = vec3f(0.0);
+  var throughput = vec3f(1.0);
+
+  for (var bounce = 0u; bounce < uniforms.bounces; bounce = bounce + 1u) {
+    let h = intersect(ray);
+    if h.tri < 0 {
+      color = color + throughput * sky(ray.d);
+      break;
+    }
+    let tr = tris[h.tri];
+    let m = mats[tr.matIdx];
+    let pos = ray.o + ray.d * h.t;
+    let n = shadeNormal(h);
+
+    color = color + throughput * m.emission;
+
+    let V = -ray.d;
+
+    if m.transmission > 0.5 {
+      var nl = n;
+      var eta: f32;
+      let entering = dot(ray.d, n) < 0.0;
+      if entering { nl = n; eta = 1.0 / m.ior; }
+      else { nl = -n; eta = m.ior; }
+      let cosI = -dot(ray.d, nl);
+      let f0v = (m.ior - 1.0) / (m.ior + 1.0);
+      let f0 = vec3f(f0v * f0v);
+      let fres = fresnelSchlick(cosI, f0).x;
+      let refr = refract(ray.d, nl, eta);
+      if rand(&s) < fres || dot(refr, refr) < 1e-6 {
+        let rdir = reflect(ray.d, nl);
+        ray = Ray(pos + nl * EPS, rdir, EPS, 1e30);
+      } else {
+        throughput = throughput * m.baseColor;
+        ray = Ray(pos - nl * EPS, normalize(refr), EPS, 1e30);
+      }
+    } else if m.metalness > 0.5 {
+      let hN = ggxSample(n, m.roughness, &s);
+      var rdir = reflect(ray.d, hN);
+      if dot(rdir, n) < 0.0 { rdir = reflect(ray.d, n); }
+      let f = fresnelSchlick(max(dot(V, hN), 0.0), m.baseColor);
+      throughput = throughput * f;
+      ray = Ray(pos + n * EPS, normalize(rdir), EPS, 1e30);
+    } else {
+      let f0 = mix(vec3f(0.04), m.baseColor, m.metalness);
+      let specProb = clamp(max(f0.x, max(f0.y, f0.z)) + m.metalness, 0.05, 0.9);
+      if rand(&s) < specProb {
+        let hN = ggxSample(n, m.roughness, &s);
+        var rdir = reflect(ray.d, hN);
+        if dot(rdir, n) < 0.0 { rdir = reflect(ray.d, n); }
+        let f = fresnelSchlick(max(dot(V, hN), 0.0), f0);
+        throughput = throughput * f / specProb;
+        ray = Ray(pos + n * EPS, normalize(rdir), EPS, 1e30);
+      } else {
+        let ndir = cosineSample(n, &s);
+        throughput = throughput * m.baseColor / (1.0 - specProb);
+        ray = Ray(pos + n * EPS, ndir, EPS, 1e30);
+      }
+    }
+
+    if bounce > 2u {
+      let p = max(throughput.x, max(throughput.y, throughput.z));
+      if rand(&s) > p { break; }
+      throughput = throughput / max(p, 1e-4);
+    }
+    throughput = clamp(throughput, vec3f(0.0), vec3f(20.0));
+  }
+  if !(color.x == color.x) || !(color.y == color.y) || !(color.z == color.z) {
+    color = vec3f(0.0);
+  }
+  return clamp(color, vec3f(0.0), vec3f(64.0));
+}
+
+@compute @workgroup_size(8, 8)
+fn main(@builtin(global_invocation_id) gid: vec3u) {
+  if gid.x >= uniforms.width || gid.y >= uniforms.height { return; }
+  let px = gid.xy;
+  let pixIdx = px.x + px.y * uniforms.width;
+  let frame = u32(uniforms.frame);
+  var seed = px.x + px.y * uniforms.width + frame * uniforms.width * uniforms.height + 1u;
+
+  let ray = generateRay(px, &seed);
+  let c = pathTrace(ray, seed);
+
+  let prev = accum[pixIdx];
+  let nv = prev + vec4f(c, 1.0);
+  accum[pixIdx] = nv;
+  let outc = nv.rgb / max(nv.w, 1.0);
+  textureStore(outTex, vec2i(px), vec4f(outc, 1.0));
+}
+`;
+
+// ---------------------------------------------------------------------------
+// WGSL: display (tone-map)
+// ---------------------------------------------------------------------------
+function buildDisplayWGSL(exposure) {
+  return /* wgsl */`
+@group(0) @binding(0) var srcTex: texture_2d<f32>;
+@group(0) @binding(1) var srcSamp: sampler;
+struct VSOut { @builtin(position) pos: vec4f, @location(0) uv: vec2f };
+
+@vertex
+fn vs(@builtin(vertex_index) vi: u32) -> VSOut {
+  var p = array<vec2f,3>(vec2f(-1.0,-1.0), vec2f(3.0,-1.0), vec2f(-1.0,3.0));
+  var o: VSOut;
+  let xy = p[vi];
+  o.pos = vec4f(xy, 0.0, 1.0);
+  o.uv = vec2f((xy.x + 1.0) * 0.5, 1.0 - (xy.y + 1.0) * 0.5);
+  return o;
+}
+
+fn aces(x: vec3f) -> vec3f {
+  let a = 2.51; let b = 0.03; let c = 2.43; let d = 0.59; let e = 0.14;
+  return clamp((x*(a*x+b))/(x*(c*x+d)+e), vec3f(0.0), vec3f(1.0));
+}
+
+@fragment
+fn fs(in: VSOut) -> @location(0) vec4f {
+  let hdr = textureSampleLevel(srcTex, srcSamp, in.uv, 0.0).rgb * ${exposure.toFixed(4)};
+  let mapped = aces(hdr);
+  let srgb = pow(mapped, vec3f(1.0/2.2));
+  return vec4f(srgb, 1.0);
+}
+`;
+}
+
+// ---------------------------------------------------------------------------
+// Pipelines
+// ---------------------------------------------------------------------------
+const computeModule = device.createShaderModule({ code: computeWGSL });
+const computePipeline = device.createComputePipeline({
+  layout: 'auto',
+  compute: { module: computeModule, entryPoint: 'main' },
+});
+
+let displayPipeline, displayBindGroupLayout;
+function buildDisplayPipeline(exposure) {
+  const mod = device.createShaderModule({ code: buildDisplayWGSL(exposure) });
+  displayPipeline = device.createRenderPipeline({
+    layout: 'auto',
+    vertex: { module: mod, entryPoint: 'vs' },
+    fragment: { module: mod, entryPoint: 'fs', targets: [{ format }] },
+    primitive: { topology: 'triangle-list' },
+  });
+  displayBindGroupLayout = displayPipeline.getBindGroupLayout(0);
+}
+buildDisplayPipeline(1.0);
+
+const uniformBuffer = device.createBuffer({ size: 256, usage: GPUBufferUsage.UNIFORM | GPUBufferUsage.COPY_DST });
+const uF = new Float32Array(64);
+const uU = new Uint32Array(uF.buffer);
+
+// ---------------------------------------------------------------------------
+// Resolution-dependent resources
+// ---------------------------------------------------------------------------
+let ptWidth = 1, ptHeight = 1;
+let accumBuffer, outputTexture, computeBindGroup, displayBindGroup;
+let frameCount = 0;
+const sampler = device.createSampler({ magFilter: 'linear', minFilter: 'linear' });
+
+function createPtResources(w, h) {
+  ptWidth = Math.max(1, w | 0);
+  ptHeight = Math.max(1, h | 0);
+  if (accumBuffer) accumBuffer.destroy();
+  if (outputTexture) outputTexture.destroy();
+  accumBuffer = device.createBuffer({
+    size: ptWidth * ptHeight * 16,
+    usage: GPUBufferUsage.STORAGE | GPUBufferUsage.COPY_DST,
+  });
+  outputTexture = device.createTexture({
+    size: [ptWidth, ptHeight],
+    format: 'rgba16float',
+    usage: GPUTextureUsage.STORAGE_BINDING | GPUTextureUsage.TEXTURE_BINDING,
+  });
+  rebuildComputeBindGroup();
+  rebuildDisplayBindGroup();
+  resetAccum();
+}
+
+function rebuildComputeBindGroup() {
+  if (!accumBuffer || !outputTexture || !bvhBuffer) return;
+  computeBindGroup = device.createBindGroup({
+    layout: computePipeline.getBindGroupLayout(0),
+    entries: [
+      { binding: 0, resource: { buffer: uniformBuffer } },
+      { binding: 1, resource: { buffer: bvhBuffer } },
+      { binding: 2, resource: { buffer: triBuffer } },
+      { binding: 3, resource: { buffer: matBuffer } },
+      { binding: 4, resource: { buffer: accumBuffer } },
+      { binding: 5, resource: outputTexture.createView() },
+    ],
+  });
+}
+
+function rebuildDisplayBindGroup() {
+  if (!outputTexture) return;
+  displayBindGroup = device.createBindGroup({
+    layout: displayBindGroupLayout,
+    entries: [
+      { binding: 0, resource: outputTexture.createView() },
+      { binding: 1, resource: sampler },
+    ],
+  });
+}
+
+function resetAccum() {
+  frameCount = 0;
+  if (accumBuffer) {
+    device.queue.writeBuffer(accumBuffer, 0, new Float32Array(ptWidth * ptHeight * 4));
+  }
+}
+
+// ---------------------------------------------------------------------------
+// Params + GUI
+// ---------------------------------------------------------------------------
 const params = {
-    maxSamples:      512,
-    bounces:           6,
-    targetFPS:        30,
-    resolutionScale: 1.0,
-    filterGlossy:   0.75,
-    denoiseEnabled:  true,
-    // sky
-    envIntensity:    2.0,
-    skyZenith:   '#5e9bd6',
-    skyHorizon:  '#e8f3ff',
-    groundColor: '#4a4540',
-    sunColor:    '#fff4e0',
-    sunAzimuth:     35,
-    sunElevation:   55,
-    sunSize:         4.0,
-    sunIntensity:   40.0,
-    debugDisableEnv: false,
-    // objects
-    addSphere: () => addPrimitive('sphere'),
-    addBox:    () => addPrimitive('box'),
-    loadModel: () => document.getElementById('file-input').click(),
-    preset: 'Balanced'
+  bounces: 6,
+  maxSamples: 1024,
+  targetRes: 1.0,
+  exposure: 1.0,
+  envIntensity: 1.0,
+  sunAzimuth: 0.7,
+  sunElevation: 0.85,
+  sunSize: 0.04,
+  sunIntensity: 18.0,
+  skyZenith: '#3a6dd0',
+  skyHorizon: '#bcd2ee',
+  groundColor: '#2a2c33',
+  sunColor: '#fff2d6',
+  preset: 'Balanced',
 };
 
-const PRESETS = {
-    Fast:     { targetFPS: 60, bounces: 3,  filterGlossy: 0.85, resolutionScale: 0.75 },
-    Balanced: { targetFPS: 30, bounces: 6,  filterGlossy: 0.75, resolutionScale: 1.00 },
-    Quality:  { targetFPS: 15, bounces: 10, filterGlossy: 0.50, resolutionScale: 1.00 },
-};
-
-// ─────────────────────────────────────────────────────────────────────────────
-//  A-TROUS BILATERAL DENOISER  (3-pass, B3-spline 5×5 kernel)
-// ─────────────────────────────────────────────────────────────────────────────
-const VERT_SRC = `
-varying vec2 vUv;
-void main(){ vUv = uv; gl_Position = vec4(position.xy, 0.0, 1.0); }`;
-
-const FRAG_SRC = `
-precision highp float;
-uniform sampler2D tDiffuse;
-uniform vec2      resolution;
-uniform float     strength;   // 0..1
-uniform float     stepSize;   // 1, 2, 4
-
-varying vec2 vUv;
-
-float luma(vec3 c){ return dot(c, vec3(0.2126, 0.7152, 0.0722)); }
-
-void main(){
-    if(strength < 0.005){ gl_FragColor = texture2D(tDiffuse, vUv); return; }
-
-    vec2 px  = 1.0 / resolution;
-    vec4 cen = texture2D(tDiffuse, vUv);
-    float lC = luma(cen.rgb);
-
-    // B3-spline 1-D weights
-    float k[5];
-    k[0]=1.0/16.0; k[1]=4.0/16.0; k[2]=6.0/16.0; k[3]=4.0/16.0; k[4]=1.0/16.0;
-
-    vec4  acc = vec4(0.0);
-    float tw  = 0.0;
-
-    for(int j=0; j<5; j++){
-        for(int i=0; i<5; i++){
-            vec2  off  = vec2(float(i-2), float(j-2)) * stepSize * px;
-            vec4  s    = texture2D(tDiffuse, vUv + off);
-            float sw   = k[i] * k[j];
-            // luminance-based edge-stop — tighter than color distance, cheaper
-            float rw   = exp(-abs(luma(s.rgb) - lC) * 10.0);
-            float w    = sw * rw;
-            acc += s * w;
-            tw  += w;
-        }
-    }
-
-    gl_FragColor = mix(cen, acc / max(tw, 1e-6), strength);
-}`;
-
-// ─────────────────────────────────────────────────────────────────────────────
-//  INIT
-// ─────────────────────────────────────────────────────────────────────────────
-init();
-animate();
-
-function init(){
-    // WebGL renderer
-    renderer = new THREE.WebGLRenderer({ antialias: false, powerPreference: 'high-performance' });
-    renderer.toneMapping         = THREE.ACESFilmicToneMapping;
-    renderer.toneMappingExposure = 1.6;
-    renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
-    renderer.setSize(window.innerWidth, window.innerHeight);
-    document.body.appendChild(renderer.domElement);
-
-    // Camera
-    camera = new THREE.PerspectiveCamera(55, window.innerWidth / window.innerHeight, 0.1, 1000);
-    camera.position.set(6, 4.5, 9);
-
-    // Path tracer  ← tiles always 1×1: guarantees 1 full sample per frame
-    ptRenderer = new PathTracingRenderer(renderer);
-    ptRenderer.camera   = camera;
-    ptRenderer.material = new PhysicalPathTracingMaterial();
-    ptRenderer.tiles.set(1, 1);
-    ptRenderer.bounces  = params.bounces;
-    ptRenderer.material.filterGlossyFactor = params.filterGlossy;
-
-    ptSceneGenerator = new PathTracingSceneGenerator();
-    ptSceneGenerator.generateBVH = true;
-
-    // Orbit controls
-    orbitControls = new OrbitControls(camera, renderer.domElement);
-    orbitControls.target.set(0, 1.2, 0);
-    orbitControls.update();
-    orbitControls.addEventListener('change', onInteract);
-
-    // Display fullscreen quad
-    displayCamera = new THREE.OrthographicCamera(-1, 1, 1, -1, 0, 1);
-    displayScene  = new THREE.Scene();
-    displayMesh   = new THREE.Mesh(
-        new THREE.PlaneGeometry(2, 2),
-        new THREE.MeshBasicMaterial({ map: ptRenderer.target.texture })
-    );
-    displayMesh.frustumCulled = false;
-    displayScene.add(displayMesh);
-
-    // Denoiser fullscreen quad
-    denoiserCamera = new THREE.OrthographicCamera(-1, 1, 1, -1, 0, 1);
-    denoiserScene  = new THREE.Scene();
-    denoiserMat    = new THREE.ShaderMaterial({
-        vertexShader: VERT_SRC, fragmentShader: FRAG_SRC,
-        uniforms: {
-            tDiffuse:   { value: null },
-            resolution: { value: new THREE.Vector2(1, 1) },
-            strength:   { value: 1.0 },
-            stepSize:   { value: 1.0 }
-        },
-        depthTest: false, depthWrite: false
-    });
-    denoiserMesh = new THREE.Mesh(new THREE.PlaneGeometry(2, 2), denoiserMat);
-    denoiserMesh.frustumCulled = false;
-    denoiserScene.add(denoiserMesh);
-
-    buildDefaultScene();
-    setupGUI();
-    document.getElementById('file-input').addEventListener('change', onFileLoad);
-    window.addEventListener('resize', onResize);
-
-    updateEnvironment();
-    applyScale(INTERACT_SCALE);   // small for fast initial shader compilation
-    camera.updateMatrixWorld();
-    ptRenderer.setCamera(camera);
-    rebuildBVH();
+function hexToRgb(h) {
+  const c = new THREE.Color(h);
+  return [c.r, c.g, c.b];
 }
 
-// ─────────────────────────────────────────────────────────────────────────────
-//  DEFAULT SCENE
-// ─────────────────────────────────────────────────────────────────────────────
-function buildDefaultScene(){
-    const add = (geo, mat, x, y, z) => {
-        const m = new THREE.Mesh(geo, mat);
-        m.position.set(x, y, z);
-        sceneMeshes.push(m);
-    };
-    // ground
-    add(new THREE.BoxGeometry(40, 0.2, 40),
-        new THREE.MeshStandardMaterial({ color: 0xb8b8bc, roughness: 0.08 }),
-        0, -0.1, 0);
-    // mirror sphere
-    add(new THREE.SphereGeometry(1.3, 32, 32),
-        new THREE.MeshStandardMaterial({ color: 0xffffff, metalness: 1.0, roughness: 0.02 }),
-        -3.2, 1.3, 0);
-    // gold sphere
-    add(new THREE.SphereGeometry(1.3, 32, 32),
-        new THREE.MeshStandardMaterial({ color: 0xffc864, metalness: 1.0, roughness: 0.18 }),
-        0, 1.3, -1.5);
-    // glass sphere
-    add(new THREE.SphereGeometry(1.3, 32, 32),
-        new THREE.MeshPhysicalMaterial({ color: 0xffffff, metalness: 0, roughness: 0,
-                                         transmission: 1.0, ior: 1.5, thickness: 1.4 }),
-        3.2, 1.3, 0);
-    // teal box
-    add(new THREE.BoxGeometry(1.8, 1.8, 1.8),
-        new THREE.MeshStandardMaterial({ color: 0x2f9e8f, roughness: 0.55 }),
-        1.4, 0.9, 2.6);
+const gui = new GUI({ title: 'Path Tracer' });
+gui.add(params, 'preset', ['Fast', 'Balanced', 'Quality']).onChange(applyPreset);
+function applyPreset(p) {
+  if (p === 'Fast') { params.bounces = 3; params.targetRes = 0.75; }
+  else if (p === 'Balanced') { params.bounces = 6; params.targetRes = 1.0; }
+  else if (p === 'Quality') { params.bounces = 10; params.targetRes = 1.0; }
+  gui.controllersRecursive().forEach((c) => c.updateDisplay());
+  resize();
+  resetAccum();
 }
 
-// ─────────────────────────────────────────────────────────────────────────────
-//  SKY TEXTURE  (512×256 equirect, atmospheric scattering approximation)
-// ─────────────────────────────────────────────────────────────────────────────
-function makeSkyTexture(W = 512, H = 256){
-    const data = new Float32Array(W * H * 4);
+const fSky = gui.addFolder('Sun & Sky');
+fSky.add(params, 'sunAzimuth', 0, 6.283).onChange(resetAccum);
+fSky.add(params, 'sunElevation', -0.2, 1.55).onChange(resetAccum);
+fSky.add(params, 'sunSize', 0.005, 0.3).name('softness').onChange(resetAccum);
+fSky.add(params, 'sunIntensity', 0, 60).onChange(resetAccum);
+fSky.add(params, 'envIntensity', 0, 3).onChange(resetAccum);
+fSky.addColor(params, 'skyZenith').onChange(resetAccum);
+fSky.addColor(params, 'skyHorizon').onChange(resetAccum);
+fSky.addColor(params, 'groundColor').onChange(resetAccum);
+fSky.addColor(params, 'sunColor').onChange(resetAccum);
 
-    const az  = THREE.MathUtils.degToRad(params.sunAzimuth);
-    const el  = THREE.MathUtils.degToRad(params.sunElevation);
-    const sun = new THREE.Vector3(
-        Math.cos(el)*Math.sin(az), Math.sin(el), Math.cos(el)*Math.cos(az)
-    ).normalize();
+const fRender = gui.addFolder('Render');
+fRender.add(params, 'bounces', 1, 16, 1).onChange(resetAccum);
+fRender.add(params, 'maxSamples', 16, 4096, 1);
+fRender.add(params, 'targetRes', 0.25, 1.0, 0.05).onChange(() => { resize(); resetAccum(); });
+fRender.add(params, 'exposure', 0.1, 4).onChange((v) => { buildDisplayPipeline(v); rebuildDisplayBindGroup(); });
 
-    const zen    = new THREE.Color(params.skyZenith);
-    const hor    = new THREE.Color(params.skyHorizon);
-    const grd    = new THREE.Color(params.groundColor);
-    const sunCol = new THREE.Color(params.sunColor);
-    const halfA  = THREE.MathUtils.degToRad(params.sunSize * 0.5);
-    const cosCore = Math.cos(halfA);
-    const cosPen  = Math.cos(halfA * 1.4);   // penumbra ring
+const fObj = gui.addFolder('Objects');
+fObj.add({ addSphere: () => {
+  const mesh = new THREE.Mesh(new THREE.SphereGeometry(1.0, 48, 32),
+    new THREE.MeshStandardMaterial({ color: 0xffffff, metalness: 0.0, roughness: 0.3 }));
+  mesh.position.set((Math.random() - 0.5) * 6, 1.0, (Math.random() - 0.5) * 6);
+  scene.add(mesh); extractTriangles(mesh); uploadScene();
+} }, 'addSphere').name('Add Sphere');
+fObj.add({ addBox: () => {
+  const mesh = new THREE.Mesh(new THREE.BoxGeometry(1.4, 1.4, 1.4),
+    new THREE.MeshStandardMaterial({ color: 0xcc5577, metalness: 0.0, roughness: 0.4 }));
+  mesh.position.set((Math.random() - 0.5) * 6, 0.7, (Math.random() - 0.5) * 6);
+  scene.add(mesh); extractTriangles(mesh); uploadScene();
+} }, 'addBox').name('Add Box');
+fObj.add({ load: () => loadFile() }, 'load').name('Load OBJ/GLTF');
 
-    for(let y = 0; y < H; y++){
-        const theta = ((y + 0.5) / H) * Math.PI;
-        const cy = Math.cos(theta);
-        const sy = Math.sin(theta);
-        for(let x = 0; x < W; x++){
-            const phi = ((x + 0.5) / W) * 2.0 * Math.PI;
-            const dx  = sy * Math.sin(phi);
-            const dz  = sy * Math.cos(phi);
-            let r, g, b;
-
-            if(cy >= -0.02){
-                // sky — power-law zenith/horizon blend
-                const t  = Math.pow(Math.max(cy, 0.0), 0.45);
-                r = hor.r*(1-t) + zen.r*t;
-                g = hor.g*(1-t) + zen.g*t;
-                b = hor.b*(1-t) + zen.b*t;
-                // subtle limb darkening
-                const ld = 0.85 + 0.15*t;
-                r *= ld; g *= ld; b *= ld;
-                // warm horizon haze band
-                const hz = Math.exp(-cy*cy * 120.0) * 0.25;
-                r += hor.r * hz * 1.4;
-                g += hor.g * hz * 1.2;
-                b += hor.b * hz;
-            } else {
-                // ground — fade from horizon colour
-                const f = Math.min((-cy) * 8.0, 1.0);
-                r = hor.r*(1-f) + grd.r*f;
-                g = hor.g*(1-f) + grd.g*f;
-                b = hor.b*(1-f) + grd.b*f;
-            }
-
-            // sun disk + penumbra with limb darkening
-            const dot = dx*sun.x + cy*sun.y + dz*sun.z;
-            if(dot > cosPen){
-                let ss;
-                if(dot > cosCore){
-                    const u = (dot - cosCore) / (1.0 - cosCore);
-                    ss = params.sunIntensity * (0.4 + 0.6 * Math.sqrt(u));
-                } else {
-                    const t2 = (dot - cosPen) / (cosCore - cosPen);
-                    ss = params.sunIntensity * 0.4 * t2 * t2;
-                }
-                r += sunCol.r * ss;
-                g += sunCol.g * ss;
-                b += sunCol.b * ss;
-            }
-
-            const i = (y * W + x) * 4;
-            data[i] = r; data[i+1] = g; data[i+2] = b; data[i+3] = 1.0;
-        }
-    }
-
-    const tex = new THREE.DataTexture(data, W, H, THREE.RGBAFormat, THREE.FloatType);
-    tex.mapping  = THREE.EquirectangularReflectionMapping;
-    tex.minFilter = tex.magFilter = THREE.LinearFilter;
-    tex.generateMipmaps = false;
-    tex.wrapS    = THREE.RepeatWrapping;
-    tex.wrapT    = THREE.ClampToEdgeWrapping;
-    tex.colorSpace = THREE.NoColorSpace;
-    tex.needsUpdate = true;
-    renderer.initTexture(tex);
-    return tex;
-}
-
-function updateEnvironment(){
-    if(envTex) envTex.dispose();
-    envTex = makeSkyTexture();
-    if(!params.debugDisableEnv)
-        ptRenderer.material.envMapInfo.updateFrom(envTex);
-    ptRenderer.material.environmentIntensity = params.envIntensity;
-    onInteract();
-}
-
-// ─────────────────────────────────────────────────────────────────────────────
-//  DENOISER  (resize render targets)
-// ─────────────────────────────────────────────────────────────────────────────
-function resizeDenoiser(w, h){
-    if(pingRT) pingRT.dispose();
-    if(pongRT) pongRT.dispose();
-    const cfg = {
-        format: THREE.RGBAFormat, type: THREE.HalfFloatType,
-        minFilter: THREE.LinearFilter, magFilter: THREE.LinearFilter,
-        depthBuffer: false, stencilBuffer: false
-    };
-    pingRT = new THREE.WebGLRenderTarget(w, h, cfg);
-    pongRT = new THREE.WebGLRenderTarget(w, h, cfg);
-}
-
-// strength: 1.0 at 1 SPP → 0.0 at 128 SPP  (log2 ramp)
-function denoiseStrength(spp){
-    if(!params.denoiseEnabled) return 0.0;
-    return Math.max(0.0, 1.0 - Math.log2(Math.max(spp, 1)) / 7.0);
-}
-
-function runDenoiser(spp){
-    const str = denoiseStrength(spp);
-    if(str < 0.005){
-        displayMesh.material.map = ptRenderer.target.texture;
-        displayMesh.material.needsUpdate = true;
-        return;
-    }
-    const w = pingRT.width, h = pingRT.height;
-    denoiserMat.uniforms.resolution.value.set(w, h);
-    denoiserMat.uniforms.strength.value = str;
-
-    // pass 1 — step=1  (ptTarget → ping)
-    denoiserMat.uniforms.tDiffuse.value = ptRenderer.target.texture;
-    denoiserMat.uniforms.stepSize.value = 1.0;
-    renderer.setRenderTarget(pingRT);
-    renderer.render(denoiserScene, denoiserCamera);
-
-    // pass 2 — step=2  (ping → pong)
-    denoiserMat.uniforms.tDiffuse.value = pingRT.texture;
-    denoiserMat.uniforms.stepSize.value = 2.0;
-    renderer.setRenderTarget(pongRT);
-    renderer.render(denoiserScene, denoiserCamera);
-
-    // pass 3 — step=4  (pong → ping)
-    denoiserMat.uniforms.tDiffuse.value = pongRT.texture;
-    denoiserMat.uniforms.stepSize.value = 4.0;
-    renderer.setRenderTarget(pingRT);
-    renderer.render(denoiserScene, denoiserCamera);
-
-    displayMesh.material.map = pingRT.texture;
-    displayMesh.material.needsUpdate = true;
-}
-
-// ─────────────────────────────────────────────────────────────────────────────
-//  SCENE / BVH
-// ─────────────────────────────────────────────────────────────────────────────
-function addPrimitive(type){
-    const geo = type === 'sphere' ? new THREE.SphereGeometry(1, 32, 32)
-                                  : new THREE.BoxGeometry(1.5, 1.5, 1.5);
-    const mat = new THREE.MeshStandardMaterial({
-        color: Math.random() * 0xffffff,
-        roughness: Math.random() * 0.8,
-        metalness: Math.random() > 0.5 ? 1.0 : 0.0
-    });
-    const mesh = new THREE.Mesh(geo, mat);
-    mesh.position.set((Math.random()-0.5)*12, 1+Math.random()*2, (Math.random()-0.5)*12);
-    sceneMeshes.push(mesh);
-    rebuildNeeded = true;
-}
-
-function onFileLoad(e){
-    const file = e.target.files[0]; if(!file) return;
-    const url  = URL.createObjectURL(file);
-    const ext  = file.name.split('.').pop().toLowerCase();
+function loadFile() {
+  const inp = document.createElement('input');
+  inp.type = 'file';
+  inp.accept = '.obj,.gltf,.glb';
+  inp.onchange = () => {
+    const file = inp.files[0];
+    if (!file) return;
+    const url = URL.createObjectURL(file);
+    const ext = file.name.split('.').pop().toLowerCase();
     const onLoad = (obj) => {
-        const model = obj.scene || obj;
-        const box   = new THREE.Box3().setFromObject(model);
-        const size  = box.getSize(new THREE.Vector3());
-        const sc    = 5 / Math.max(size.x, size.y, size.z);
-        model.scale.setScalar(sc);
-        model.position.sub(box.getCenter(new THREE.Vector3()).multiplyScalar(sc));
-        model.position.y += 2.5;
-        model.updateMatrixWorld(true);
-        model.traverse(c => {
-            if(c.isMesh){ if(c.material) c.material.roughness = 0.2; sceneMeshes.push(c); }
-        });
-        rebuildNeeded = true;
-        URL.revokeObjectURL(url);
+      const root = obj.scene || obj;
+      root.position.y += 1.0;
+      scene.add(root);
+      root.traverse((o) => { if (o.isMesh) extractTriangles(o); });
+      uploadScene();
+      URL.revokeObjectURL(url);
     };
-    if(ext==='gltf'||ext==='glb') new GLTFLoader().load(url, onLoad);
-    else if(ext==='obj')          new OBJLoader().load(url, onLoad);
+    if (ext === 'obj') new OBJLoader().load(url, onLoad);
+    else new GLTFLoader().load(url, onLoad);
+  };
+  inp.click();
 }
 
-function rebuildBVH(){
-    setSt('BVH…');
-    camera.updateMatrixWorld(); camera.updateProjectionMatrix();
-    const frustum = new THREE.Frustum().setFromProjectionMatrix(
-        new THREE.Matrix4().multiplyMatrices(camera.projectionMatrix, camera.matrixWorldInverse)
-    );
-    const group = new THREE.Group();
-    const aabb  = new THREE.Box3();
-    sceneMeshes.forEach(m => {
-        m.updateMatrixWorld(true); aabb.setFromObject(m);
-        const dim = aabb.getSize(new THREE.Vector3()).length();
-        if(dim > 10 || frustum.intersectsBox(aabb)) group.add(m.clone());
+// ---------------------------------------------------------------------------
+// Resize / interaction
+// ---------------------------------------------------------------------------
+let lastInteractTime = 0;
+controls.addEventListener('change', () => { lastInteractTime = Date.now(); resetAccum(); });
+
+function resize() {
+  const dpr = Math.min(window.devicePixelRatio || 1, 2);
+  const cw = Math.max(1, Math.floor(canvas.clientWidth * dpr));
+  const ch = Math.max(1, Math.floor(canvas.clientHeight * dpr));
+  canvas.width = cw; canvas.height = ch;
+  camera.aspect = cw / ch;
+  camera.updateProjectionMatrix();
+  const scale = params.targetRes;
+  const w = Math.max(1, Math.floor(cw * scale));
+  const h = Math.max(1, Math.floor(ch * scale));
+  if (w !== ptWidth || h !== ptHeight) createPtResources(w, h);
+}
+window.addEventListener('resize', resize);
+
+// ---------------------------------------------------------------------------
+// Uniform update
+// ---------------------------------------------------------------------------
+function updateUniforms(w, h) {
+  camera.updateMatrixWorld(true);
+  const invProj = camera.projectionMatrixInverse.elements;
+  const invView = camera.matrixWorld.elements;
+  for (let i = 0; i < 16; i++) uF[i] = invProj[i];
+  for (let i = 0; i < 16; i++) uF[16 + i] = invView[i];
+  uF[32] = camera.position.x; uF[33] = camera.position.y; uF[34] = camera.position.z;
+  uF[35] = frameCount;
+  uU[36] = w; uU[37] = h; uU[38] = params.bounces; uU[39] = params.maxSamples;
+  uF[40] = params.envIntensity; uF[41] = params.sunAzimuth; uF[42] = params.sunElevation; uF[43] = params.sunSize;
+  uF[44] = params.sunIntensity; uF[45] = 0; uF[46] = 0; uF[47] = 0;
+  const sz = hexToRgb(params.skyZenith); uF[48] = sz[0]; uF[49] = sz[1]; uF[50] = sz[2]; uF[51] = 0;
+  const sh = hexToRgb(params.skyHorizon); uF[52] = sh[0]; uF[53] = sh[1]; uF[54] = sh[2]; uF[55] = 0;
+  const gc = hexToRgb(params.groundColor); uF[56] = gc[0]; uF[57] = gc[1]; uF[58] = gc[2]; uF[59] = 0;
+  const sc = hexToRgb(params.sunColor); uF[60] = sc[0]; uF[61] = sc[1]; uF[62] = sc[2]; uF[63] = 0;
+  device.queue.writeBuffer(uniformBuffer, 0, uF.buffer);
+}
+
+// ---------------------------------------------------------------------------
+// Main loop
+// ---------------------------------------------------------------------------
+let fpsT = performance.now(), fpsN = 0, fpsV = 0;
+
+function frame() {
+  requestAnimationFrame(frame);
+  const interacting = (Date.now() - lastInteractTime) < 150;
+
+  const wantScale = interacting ? 0.3 : params.targetRes;
+  const cw = canvas.width, ch = canvas.height;
+  const w = Math.max(1, Math.floor(cw * wantScale));
+  const h = Math.max(1, Math.floor(ch * wantScale));
+  if (w !== ptWidth || h !== ptHeight) createPtResources(w, h);
+
+  controls.update();
+  updateUniforms(ptWidth, ptHeight);
+
+  const cmd = device.createCommandEncoder();
+
+  if (frameCount < params.maxSamples && computeBindGroup) {
+    const pass = cmd.beginComputePass();
+    pass.setPipeline(computePipeline);
+    pass.setBindGroup(0, computeBindGroup);
+    pass.dispatchWorkgroups(Math.ceil(ptWidth / 8), Math.ceil(ptHeight / 8));
+    pass.end();
+    frameCount++;
+  }
+
+  if (displayBindGroup) {
+    const rpass = cmd.beginRenderPass({
+      colorAttachments: [{
+        view: ctx.getCurrentTexture().createView(),
+        loadOp: 'clear', storeOp: 'store', clearValue: { r: 0, g: 0, b: 0, a: 1 },
+      }],
     });
-    try {
-        ptSceneGenerator.setObjects(group);
-        const { bvh, geometry, materials, textures, iesTextures } = ptSceneGenerator.generate();
-        if(!bvh || !geometry){ setSt('BVH err'); return; }
-        const mat = ptRenderer.material;
-        mat.bvh.updateFrom(bvh);
-        mat.attributesArray.updateFrom(
-            geometry.attributes.normal, geometry.attributes.tangent,
-            geometry.attributes.uv,    geometry.attributes.color
-        );
-        mat.materialIndexAttribute.updateFrom(geometry.attributes.materialIndex);
-        mat.textures.setTextures(renderer, textures, 512, 512);   // 512-px atlas for speed
-        mat.materials.updateFrom(materials, textures);
-        mat.lights.updateFrom([], iesTextures || []);
-        ptRenderer.bounces = params.bounces;
-        onInteract();
-    } catch(err){
-        console.error(err);
-        setSt('BVH err');
-    }
+    rpass.setPipeline(displayPipeline);
+    rpass.setBindGroup(0, displayBindGroup);
+    rpass.draw(3);
+    rpass.end();
+  }
+
+  device.queue.submit([cmd.finish()]);
+
+  fpsN++;
+  const now = performance.now();
+  if (now - fpsT > 500) { fpsV = Math.round(fpsN * 1000 / (now - fpsT)); fpsN = 0; fpsT = now; }
+  hSpp.textContent = frameCount;
+  hFps.textContent = fpsV;
+  hRes.textContent = `${ptWidth}x${ptHeight}`;
+  if (frameCount >= params.maxSamples) hStatus.textContent = 'converged';
+  else if (interacting) hStatus.textContent = 'preview';
+  else hStatus.textContent = 'rendering';
 }
 
-// ─────────────────────────────────────────────────────────────────────────────
-//  RESOLUTION  (applied only at run boundaries — never mid-convergence)
-// ─────────────────────────────────────────────────────────────────────────────
-function applyScale(s){
-    s = Math.max(SCALE_MIN, Math.min(1.0, s));
-    if(Math.abs(s - currentScale) < 0.01) return;
-    currentScale = s;
-    const w = Math.ceil(window.innerWidth  * s);
-    const h = Math.ceil(window.innerHeight * s);
-    ptRenderer.setSize(w, h);
-    resizeDenoiser(w, h);
-    displayMesh.material.map = ptRenderer.target.texture;
-    displayMesh.material.needsUpdate = true;
-    ptRenderer.reset();
-}
-
-// Called at the start of each new idle run.
-// Adjusts idleScale using EMA frame-time from the PREVIOUS run so no
-// mid-convergence resets ever occur.
-function adaptAndApplyIdle(){
-    if(steadyDt > 0){
-        const tgt = 1000 / params.targetFPS;
-        // GPU cost ∝ pixels ∝ scale²  →  scale correction = sqrt(tgt/measured)
-        const newScale = idleScale * Math.sqrt(tgt / steadyDt);
-        idleScale = Math.max(SCALE_MIN, Math.min(params.resolutionScale, newScale));
-        steadyDt  = -1;
-    }
-    applyScale(idleScale);
-}
-
-// Fired by orbit controls or any scene change
-function onInteract(){
-    lastInteractT = performance.now();
-    // Carry idleScale adaptation forward on each interaction
-    if(steadyDt > 0){
-        const tgt = 1000 / params.targetFPS;
-        const ns  = idleScale * Math.sqrt(tgt / steadyDt);
-        idleScale = Math.max(SCALE_MIN, Math.min(params.resolutionScale, ns));
-        steadyDt  = -1;
-    }
-    applyScale(INTERACT_SCALE);
-}
-
-function onResize(){
-    camera.aspect = window.innerWidth / window.innerHeight;
-    camera.updateProjectionMatrix();
-    renderer.setSize(window.innerWidth, window.innerHeight);
-    currentScale = -1;
-    onInteract();
-}
-
-// ─────────────────────────────────────────────────────────────────────────────
-//  PROGRESSIVE BOUNCES  (ramp from 2 up to params.bounces as SPP grows)
-// ─────────────────────────────────────────────────────────────────────────────
-function progressiveBounces(spp){
-    let b = BOUNCE_RAMP[0][1];
-    for(const [thresh, val] of BOUNCE_RAMP)
-        if(spp >= thresh) b = Math.min(params.bounces, val);
-    return b;
-}
-
-// ─────────────────────────────────────────────────────────────────────────────
-//  GUI
-// ─────────────────────────────────────────────────────────────────────────────
-function setupGUI(){
-    gui = new GUI({ title: 'Path Tracer' });
-
-    const presetF = gui.addFolder('Preset'); presetF.open();
-    presetF.add(params, 'preset', Object.keys(PRESETS)).name('Quality Preset')
-        .onChange(v => {
-            Object.assign(params, PRESETS[v]);
-            ptRenderer.material.filterGlossyFactor = params.filterGlossy;
-            idleScale = params.resolutionScale;
-            gui.controllersRecursive().forEach(c => c.updateDisplay());
-            onInteract();
-        });
-
-    const skyF = gui.addFolder('Sun & Sky');
-    skyF.add(params, 'sunAzimuth',   0, 360, 1).name('Sun Azimuth').onChange(updateEnvironment);
-    skyF.add(params, 'sunElevation',-10,  90, 1).name('Sun Elevation').onChange(updateEnvironment);
-    skyF.add(params, 'sunSize',     0.5,  30, 0.5).name('Shadow Softness').onChange(updateEnvironment);
-    skyF.add(params, 'sunIntensity',  0,  60, 0.5).name('Sun Intensity').onChange(updateEnvironment);
-    skyF.addColor(params, 'sunColor').name('Sun Color').onChange(updateEnvironment);
-    skyF.addColor(params, 'skyZenith').name('Sky Top').onChange(updateEnvironment);
-    skyF.addColor(params, 'skyHorizon').name('Sky Horizon').onChange(updateEnvironment);
-    skyF.addColor(params, 'groundColor').name('Ground').onChange(updateEnvironment);
-    skyF.add(params, 'envIntensity', 0, 3, 0.05).name('Env Intensity').onChange(updateEnvironment);
-    skyF.add(params, 'debugDisableEnv').name('Disable Custom Env').onChange(updateEnvironment);
-
-    const renderF = gui.addFolder('Render');
-    renderF.add(params, 'bounces', 1, 16, 1)
-        .onChange(() => { ptRenderer.bounces = params.bounces; onInteract(); });
-    renderF.add(params, 'maxSamples', 32, 4096, 16);
-    renderF.add(params, 'targetFPS', 10, 60, 5).name('Target FPS').onChange(onInteract);
-    renderF.add(params, 'resolutionScale', 0.25, 1.0, 0.05).name('Max Resolution')
-        .onChange(() => { idleScale = params.resolutionScale; onInteract(); });
-    renderF.add(params, 'filterGlossy', 0, 1, 0.05).name('Glossy Filter')
-        .onChange(() => { ptRenderer.material.filterGlossyFactor = params.filterGlossy; onInteract(); });
-    renderF.add(renderer, 'toneMappingExposure', 0.2, 2.0, 0.05).name('Exposure').onChange(onInteract);
-    renderF.add(params, 'denoiseEnabled').name('A-Trous Denoise');
-
-    const objF = gui.addFolder('Objects');
-    objF.add(params, 'addSphere').name('Add Sphere');
-    objF.add(params, 'addBox').name('Add Box');
-    objF.add(params, 'loadModel').name('Load OBJ/GLTF');
-}
-
-// ─────────────────────────────────────────────────────────────────────────────
-//  HUD
-// ─────────────────────────────────────────────────────────────────────────────
-function setSt(s){ document.getElementById('v-st').innerText = s; }
-
-function updateHUD(spp, interacting, converged){
-    const fps  = Math.round(1000 / Math.max(avgDt, 1));
-    const resW = Math.ceil(window.innerWidth  * currentScale);
-    const resH = Math.ceil(window.innerHeight * currentScale);
-    const dn   = Math.round(denoiseStrength(spp) * 100);
-    document.getElementById('v-spp').innerText = spp;
-    document.getElementById('v-fps').innerText = fps;
-    document.getElementById('v-res').innerText = `${resW}×${resH}`;
-    document.getElementById('v-dn').innerText  = params.denoiseEnabled ? `${dn}%` : 'off';
-    setSt(converged ? '✓ done' : interacting ? 'preview' : 'rendering');
-    document.getElementById('prog-bar').style.width =
-        Math.min(spp / params.maxSamples * 100, 100) + '%';
-}
-
-// ─────────────────────────────────────────────────────────────────────────────
-//  MAIN LOOP
-//
-//  Architecture: tiles=1×1 always → 1 full sample per frame → SPP/sec ≈ FPS
-//  Adaptive resolution maintains target FPS using frame-time EMA measured
-//  during the previous idle convergence run. Scale is only changed at run
-//  boundaries (when a reset would happen anyway) so accumulated samples are
-//  never discarded mid-convergence.
-// ─────────────────────────────────────────────────────────────────────────────
-function animate(){
-    requestAnimationFrame(animate);
-
-    const now = performance.now();
-    const dt  = now - lastFrameT;
-    lastFrameT = now;
-    avgDt = avgDt < 0 ? dt : avgDt * 0.9 + dt * 0.1;
-
-    // ── BVH rebuild ──────────────────────────────────────────────────────────
-    if(rebuildNeeded){ rebuildBVH(); rebuildNeeded = false; return; }
-
-    // ── shader compile guard ─────────────────────────────────────────────────
-    if(ptRenderer.material.isCompiling){
-        wasCompiling = true;
-        setSt('Compiling…');
-        renderer.setRenderTarget(null);
-        renderer.render(displayScene, displayCamera);
-        return;
-    }
-    if(wasCompiling){
-        wasCompiling = false;
-        // Compilation done — start an idle run at the adapted scale
-        adaptAndApplyIdle();
-        ptRenderer.reset();
-    }
-
-    const interacting = (now - lastInteractT) < INTERACT_MS;
-    const spp         = Math.floor(ptRenderer.samples);
-    const converged   = !interacting && spp >= params.maxSamples;
-
-    // ── transition: interaction ended → begin idle convergence run ───────────
-    if(!interacting && prevInteracting){
-        adaptAndApplyIdle();
-    }
-    prevInteracting = interacting;
-
-    // ── measure frame time during steady idle rendering (after 5 SPP warm-up) ─
-    if(!interacting && !converged && spp > 5){
-        steadyDt = steadyDt < 0 ? dt : steadyDt * 0.95 + dt * 0.05;
-    }
-
-    // ── progressive bounces ──────────────────────────────────────────────────
-    ptRenderer.bounces = progressiveBounces(spp);
-
-    // ── path trace (1 full sample, tiles=1) ──────────────────────────────────
-    if(!converged){
-        camera.updateMatrixWorld();
-        ptRenderer.setCamera(camera);
-        ptRenderer.update();
-    }
-
-    // ── denoiser post-process ────────────────────────────────────────────────
-    runDenoiser(spp);
-
-    // ── blit to screen ───────────────────────────────────────────────────────
-    renderer.setRenderTarget(null);
-    renderer.render(displayScene, displayCamera);
-
-    // ── HUD ──────────────────────────────────────────────────────────────────
-    updateHUD(spp, interacting, converged);
-}
-    </script>
+// ---------------------------------------------------------------------------
+// Boot
+// ---------------------------------------------------------------------------
+buildDefaultScene();
+resize();
+uploadScene();
+createPtResources(ptWidth, ptHeight);
+requestAnimationFrame(frame);
+</script>
 </body>
 </html>
