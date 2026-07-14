@@ -1,0 +1,729 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+  <meta charset="utf-8">
+  <title>반도체 공정, 버리는 것을 줄이다</title>
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+
+  <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/reveal.js/4.3.1/reset.min.css">
+  <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/reveal.js/4.3.1/reveal.min.css">
+  <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/reveal.js/4.3.1/theme/white.min.css" id="theme">
+
+  <link rel="stylesheet" as="style" crossorigin href="https://cdn.jsdelivr.net/gh/orioncactus/pretendard@v1.3.8/dist/web/static/pretendard.css" />
+
+  <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.0/css/all.min.css">
+
+  <style>
+    :root {
+      --blue:    #2563eb;
+      --blue-lt: #eff6ff;
+      --navy:    #0f172a;
+      --gray:    #64748b;
+      --gray-lt: #f8fafc;
+      --border:  #e2e8f0;
+      --accent:  #0ea5e9;
+      --amber:   #d97706;
+      --amber-lt:#fffbeb;
+      --green:   #059669;
+      --green-lt:#ecfdf5;
+    }
+
+    /* ── Base ─────────────────────────────────────────── */
+    .reveal {
+      font-family: 'Pretendard', -apple-system, BlinkMacSystemFont, 'Segoe UI',
+                   'Noto Sans KR', sans-serif;
+      background: #f0f4f8;
+      color: var(--navy);
+      font-size: 27px;
+    }
+
+    .reveal .slides section {
+      border-radius: 20px;
+      background: #fff;
+      box-shadow: 0 8px 40px rgba(15,23,42,.10);
+      padding: 50px 58px 42px;
+    }
+
+    /* ── Headings ─────────────────────────────────────── */
+    .reveal h1, .reveal h2, .reveal h3 {
+      font-family: inherit;
+      text-transform: none;
+      letter-spacing: -0.03em;
+    }
+
+    .reveal h1 {
+      font-size: 2em;
+      font-weight: 800;
+      color: var(--navy);
+      line-height: 1.25;
+      margin-bottom: 16px;
+    }
+
+    .slide-label {
+      display: inline-flex;
+      align-items: center;
+      gap: 8px;
+      font-size: 0.55em;
+      font-weight: 600;
+      color: var(--blue);
+      background: var(--blue-lt);
+      border-radius: 100px;
+      padding: 5px 14px;
+      margin-bottom: 18px;
+      letter-spacing: 0.01em;
+    }
+
+    .slide-label.tone-amber { color: var(--amber); background: var(--amber-lt); }
+    .slide-label.tone-green { color: var(--green); background: var(--green-lt); }
+
+    .reveal h2.section-title {
+      font-size: 1.12em;
+      font-weight: 700;
+      color: var(--navy);
+      text-align: left;
+      border: none;
+      padding: 0;
+      margin: 0 0 26px;
+    }
+
+    .reveal p, .reveal li {
+      font-size: 0.8em;
+      font-weight: 400;
+      line-height: 1.68;
+      color: #334155;
+    }
+
+    /* ── Stat Badges ──────────────────────────────────── */
+    .stat-row { display: flex; gap: 20px; margin-bottom: 28px; }
+
+    .stat-badge {
+      flex: 1;
+      background: var(--blue-lt);
+      border-radius: 14px;
+      padding: 18px 18px;
+      text-align: center;
+    }
+
+    .stat-badge .num {
+      font-size: 1.35em;
+      font-weight: 800;
+      color: var(--blue);
+      display: block;
+      line-height: 1.15;
+    }
+
+    .stat-badge .lbl {
+      font-size: 0.56em;
+      color: var(--gray);
+      margin-top: 6px;
+      display: block;
+      line-height: 1.4;
+    }
+
+    /* ── Bullet List ──────────────────────────────────── */
+    ul.ppt-list { text-align: left; list-style: none; padding: 0; margin: 0; }
+
+    ul.ppt-list > li {
+      display: flex;
+      gap: 14px;
+      align-items: flex-start;
+      margin-bottom: 18px;
+    }
+
+    ul.ppt-list > li .icon {
+      width: 32px;
+      height: 32px;
+      border-radius: 8px;
+      background: var(--blue-lt);
+      color: var(--blue);
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      font-size: 0.7em;
+      flex-shrink: 0;
+      margin-top: 2px;
+    }
+
+    ul.ppt-list > li .icon.amber { background: var(--amber-lt); color: var(--amber); }
+    ul.ppt-list > li .icon.green { background: var(--green-lt); color: var(--green); }
+
+    ul.ppt-list > li .body strong {
+      font-size: 0.85em;
+      font-weight: 700;
+      color: var(--navy);
+      display: block;
+      margin-bottom: 3px;
+    }
+
+    ul.ppt-list > li .body span { font-size: 0.74em; color: var(--gray); }
+
+    /* ── Tri card (compact 3-up) ──────────────────────── */
+    .tri-grid { display: flex; gap: 18px; }
+
+    .tri-card {
+      flex: 1;
+      background: var(--gray-lt);
+      border: 1px solid var(--border);
+      border-radius: 14px;
+      padding: 20px 18px;
+    }
+
+    .tri-card .num-badge {
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      width: 26px; height: 26px;
+      border-radius: 8px;
+      background: var(--navy);
+      color: #fff;
+      font-size: 0.62em;
+      font-weight: 700;
+      margin-bottom: 10px;
+    }
+
+    .tri-card h3 {
+      font-size: 0.8em;
+      font-weight: 700;
+      color: var(--navy);
+      margin: 0 0 8px;
+    }
+
+    .tri-card p { font-size: 0.66em !important; color: var(--gray) !important; margin: 0 !important; line-height: 1.6 !important; }
+
+    /* ── Overview mini grid (6 items) ─────────────────── */
+    .mini-grid { display: grid; grid-template-columns: repeat(3, 1fr); gap: 14px; }
+
+    .mini-card {
+      background: var(--gray-lt);
+      border: 1px solid var(--border);
+      border-radius: 12px;
+      padding: 16px 16px;
+      display: flex;
+      align-items: center;
+      gap: 12px;
+    }
+
+    .mini-card .n {
+      font-size: 0.9em;
+      font-weight: 800;
+      color: var(--blue);
+      flex-shrink: 0;
+    }
+
+    .mini-card span { font-size: 0.66em; font-weight: 600; color: var(--navy); line-height: 1.4; }
+
+    .mini-card.is-focus { border-color: var(--amber); background: var(--amber-lt); }
+    .mini-card.is-focus .n { color: var(--amber); }
+
+    /* ── Vertical flow (EMS architecture) ─────────────── */
+    .flow-vertical { display: flex; flex-direction: column; gap: 0; }
+
+    .flow-step {
+      background: var(--gray-lt);
+      border: 1px solid var(--border);
+      border-left: 4px solid var(--blue);
+      border-radius: 12px;
+      padding: 14px 18px;
+    }
+
+    .flow-step strong { font-size: 0.78em; color: var(--navy); display: block; margin-bottom: 3px; }
+    .flow-step span { font-size: 0.66em; color: var(--gray); }
+
+    .flow-arrow-down { text-align: center; color: var(--border); font-size: 0.9em; margin: 4px 0; }
+    .flow-arrow-down i { color: #94a3b8; }
+
+    /* ── Horizontal flow (production-energy linkage) ──── */
+    .flow-horizontal { display: flex; align-items: stretch; gap: 10px; }
+
+    .flow-box {
+      flex: 1;
+      background: var(--gray-lt);
+      border: 1px solid var(--border);
+      border-radius: 12px;
+      padding: 16px 12px;
+      text-align: center;
+    }
+
+    .flow-box .ico {
+      width: 38px; height: 38px;
+      background: var(--blue-lt);
+      color: var(--blue);
+      border-radius: 10px;
+      display: flex; align-items: center; justify-content: center;
+      font-size: 0.9em;
+      margin: 0 auto 10px;
+    }
+
+    .flow-box strong { font-size: 0.68em; color: var(--navy); display: block; margin-bottom: 5px; }
+    .flow-box p { font-size: 0.56em !important; color: var(--gray) !important; margin: 0 !important; line-height: 1.5 !important; }
+
+    .flow-connector { display: flex; align-items: center; color: #cbd5e1; font-size: 1em; flex-shrink: 0; }
+
+    /* ── Layer stack (synthesis slide) ────────────────── */
+    .layer-stack { display: flex; flex-direction: column; gap: 12px; }
+
+    .layer {
+      display: flex;
+      align-items: center;
+      gap: 18px;
+      border-radius: 14px;
+      padding: 16px 22px;
+    }
+
+    .layer .l-badge {
+      width: 42px; height: 42px;
+      border-radius: 10px;
+      display: flex; align-items: center; justify-content: center;
+      font-size: 1em;
+      flex-shrink: 0;
+      color: #fff;
+    }
+
+    .layer .l-body strong { font-size: 0.8em; color: var(--navy); display: block; margin-bottom: 3px; }
+    .layer .l-body span { font-size: 0.66em; color: var(--gray); }
+
+    .layer.l1 { background: var(--amber-lt); }
+    .layer.l1 .l-badge { background: var(--amber); }
+    .layer.l2 { background: var(--blue-lt); }
+    .layer.l2 .l-badge { background: var(--blue); }
+    .layer.l3 { background: var(--green-lt); }
+    .layer.l3 .l-badge { background: var(--green); }
+
+    /* ── Two-col ───────────────────────────────────────── */
+    .two-col { display: flex; gap: 30px; align-items: flex-start; }
+    .two-col > .col-a { flex: 1; }
+    .two-col > .col-b { flex: 1; }
+
+    /* ── Highlight box ─────────────────────────────────── */
+    .highlight-box { background: var(--blue-lt); border-radius: 12px; padding: 16px 20px; margin-top: 16px; }
+    .highlight-box p { font-size: 0.72em !important; color: #1e40af !important; margin: 0 !important; }
+    .highlight-box.amber { background: var(--amber-lt); }
+    .highlight-box.amber p { color: #92400e !important; }
+
+    /* ── Title / End slide ───────────────────────────────── */
+    .title-slide {
+      background: linear-gradient(135deg, #0f172a 0%, #1e3a5f 55%, #2563eb 100%) !important;
+      color: #fff !important;
+    }
+    .title-slide h1 { color: #fff !important; }
+
+    .title-badge {
+      display: inline-flex;
+      align-items: center;
+      gap: 8px;
+      background: rgba(255,255,255,0.15);
+      backdrop-filter: blur(6px);
+      border: 1px solid rgba(255,255,255,0.25);
+      border-radius: 100px;
+      padding: 7px 20px;
+      font-size: 0.6em;
+      color: rgba(255,255,255,0.9);
+      margin-bottom: 24px;
+    }
+
+    .title-divider { width: 56px; height: 4px; background: var(--accent); border-radius: 4px; margin: 24px auto; }
+
+    .end-slide { background: linear-gradient(135deg, #0f172a 0%, #1e3a5f 55%, #2563eb 100%) !important; }
+    .end-slide h1 { color: #fff !important; font-size: 2.1em !important; }
+  </style>
+</head>
+<body>
+  <div class="reveal">
+    <div class="slides">
+
+      <section class="title-slide">
+        <div style="text-align:center; padding: 20px 0 10px;">
+          <div class="title-badge"><i class="fa-solid fa-microchip"></i> 반도체 공정 탐구</div>
+          <h1>버려지는 것들을<br>공정 안으로 다시 가져오는 법</h1>
+          <div class="title-divider"></div>
+          <p style="color:rgba(255,255,255,0.6); font-size:0.65em; margin:0;">가스 · 용수 · 열 · 데이터, 네 가지 순환 이야기</p>
+        </div>
+      </section>
+
+      <section>
+        <div class="slide-label"><i class="fa-solid fa-triangle-exclamation"></i> 문제의 시작</div>
+        <h2 class="section-title">반도체 공정은 왜 이렇게 많이 쓰고, 많이 버릴까</h2>
+
+        <div class="stat-row">
+          <div class="stat-badge">
+            <span class="num">최대 23,500배</span>
+            <span class="lbl">세정 공정에 쓰이는 SF6 가스의 온실효과 (CO2 환산)</span>
+          </div>
+          <div class="stat-badge">
+            <span class="num">하루 수만 톤</span>
+            <span class="lbl">대형 팹 한 곳이 쓰는 초순수(UPW) 사용량</span>
+          </div>
+          <div class="stat-badge">
+            <span class="num">연중무휴</span>
+            <span class="lbl">고온 공정을 식히기 위해 멈추지 않는 냉각 설비</span>
+          </div>
+        </div>
+
+        <ul class="ppt-list">
+          <li>
+            <div class="icon"><i class="fa-solid fa-wind"></i></div>
+            <div class="body">
+              <strong>공정가스, 쓰고 나면 대기로</strong>
+              <span>식각·세정에 쓰이는 불소계 가스는 온난화지수가 이산화탄소보다 훨씬 높은데, 상당수가 처리되지 않고 배출됩니다.</span>
+            </div>
+          </li>
+          <li>
+            <div class="icon"><i class="fa-solid fa-droplet"></i></div>
+            <div class="body">
+              <strong>초순수, 만드는 데도 에너지가 든다</strong>
+              <span>웨이퍼 세정용 초순수는 여러 단계 정제를 거쳐야 하고, 쓰고 난 물은 대부분 그대로 폐수로 나갑니다.</span>
+            </div>
+          </li>
+          <li>
+            <div class="icon"><i class="fa-solid fa-temperature-high"></i></div>
+            <div class="body">
+              <strong>열을 식히려고 또 전력을 쓴다</strong>
+              <span>공정에서 나온 열을 냉각 설비로 빼내는 데 전력이 들고, 그 열은 대부분 그냥 버려집니다.</span>
+            </div>
+          </li>
+        </ul>
+      </section>
+
+      <section>
+        <div class="slide-label"><i class="fa-solid fa-list-check"></i> 오늘 다룰 여섯 가지</div>
+        <h2 class="section-title">가스ㆍ용수는 줄이고, 열ㆍ데이터는 다시 쓴다</h2>
+
+        <div class="mini-grid">
+          <div class="mini-card"><span class="n">01</span><span>대체 공정가스 도입</span></div>
+          <div class="mini-card"><span class="n">02</span><span>통합 스크러버 고도화</span></div>
+          <div class="mini-card"><span class="n">03</span><span>초순수 재활용</span></div>
+          <div class="mini-card is-focus"><span class="n">04</span><span>폐열 회수 시스템</span></div>
+          <div class="mini-card is-focus"><span class="n">05</span><span>EMS 에너지관리시스템</span></div>
+          <div class="mini-card is-focus"><span class="n">06</span><span>예측 기반 수요-생산 연동</span></div>
+        </div>
+
+        <div class="highlight-box" style="margin-top:22px;">
+          <p><i class="fa-solid fa-circle-info" style="margin-right:6px;"></i>
+          1~3번이 <strong>버리는 양 자체를 줄이는 기술</strong>이라면, 4~6번은 <strong>이미 나온 열과 데이터를 붙잡아 다시 순환시키는 기술</strong>입니다. 뒤로 갈수록 하드웨어에서 소프트웨어로 무게중심이 옮겨갑니다.</p>
+        </div>
+      </section>
+
+      <section>
+        <div class="slide-label tone-green"><i class="fa-solid fa-recycle"></i> 기술 01 · 02 · 03</div>
+        <h2 class="section-title">쓰는 양과 버리는 양을 줄이는 세 가지</h2>
+
+        <div class="tri-grid">
+          <div class="tri-card">
+            <div class="num-badge">01</div>
+            <h3>대체 공정가스 도입</h3>
+            <p>온난화지수가 높은 SF6·NF3 계열 세정가스를 저GWP 대체가스나 원격 플라즈마 세정 방식으로 바꿔, 처리가 아니라 배출량 자체를 줄입니다.</p>
+          </div>
+          <div class="tri-card">
+            <div class="num-badge">02</div>
+            <h3>통합 스크러버 고도화</h3>
+            <p>설비마다 따로 있던 배가스 처리 장치를 하나의 라인으로 묶고, 연소식·습식 처리를 결합해 유해가스 제거율과 에너지 효율을 동시에 끌어올립니다.</p>
+          </div>
+          <div class="tri-card">
+            <div class="num-badge">03</div>
+            <h3>초순수 재활용</h3>
+            <p>세정에 쓰인 물 중 오염도가 낮은 것을 골라 역삼투·자외선·이온교환 등 다단계 정제 후 되돌려보내, 용수 사용량과 폐수 발생을 함께 줄입니다.</p>
+          </div>
+        </div>
+      </section>
+
+      <section>
+        <div class="slide-label tone-amber"><i class="fa-solid fa-fire-flame-curved"></i> 기술 04 · 배경</div>
+        <h2 class="section-title">열은 왜 계속 새어 나가는가</h2>
+
+        <div class="two-col">
+          <div class="col-a">
+            <ul class="ppt-list">
+              <li>
+                <div class="icon amber"><i class="fa-solid fa-fire"></i></div>
+                <div class="body">
+                  <strong>고온 공정 + 상시 냉각</strong>
+                  <span>산화·확산·식각 같은 고온 공정과 그것을 식히는 냉각 설비가 24시간 함께 돌아갑니다.</span>
+                </div>
+              </li>
+              <li>
+                <div class="icon amber"><i class="fa-solid fa-repeat"></i></div>
+                <div class="body">
+                  <strong>냉각이 또 다른 전력 소비를 부른다</strong>
+                  <span>열을 빼내기 위해 칠러가 돌수록 전력 사용량이 늘고, 그만큼 다시 열이 발생하는 흐름이 반복됩니다.</span>
+                </div>
+              </li>
+              <li>
+                <div class="icon amber"><i class="fa-solid fa-trash"></i></div>
+                <div class="body">
+                  <strong>정작 열은 그대로 버려진다</strong>
+                  <span>많은 비용을 들여 빼낸 열의 대부분은 그대로 대기 중으로 방출됩니다.</span>
+                </div>
+              </li>
+            </ul>
+          </div>
+          <div class="col-b">
+            <div class="highlight-box amber">
+              <p><i class="fa-solid fa-quote-left" style="margin-right:6px;"></i>
+              열을 만들고, 식히려고 전력을 쓰고, 그 결과 다시 열이 남는다 — 폐열 회수는 이 순환 고리 중간에서 열을 가로채는 접근입니다.</p>
+            </div>
+            <div class="highlight-box" style="margin-top:14px;">
+              <p><i class="fa-solid fa-leaf" style="margin-right:6px;"></i>
+              버려지는 폐열을 모으고 재활용하면 에너지 비용을 절감하고 탄소 배출도 함께 줄일 수 있습니다.</p>
+            </div>
+          </div>
+        </div>
+      </section>
+
+      <section>
+        <div class="slide-label tone-amber"><i class="fa-solid fa-fire-flame-curved"></i> 기술 04 · 방법</div>
+        <h2 class="section-title">열을 붙잡는 세 가지 방식</h2>
+
+        <ul class="ppt-list">
+          <li>
+            <div class="icon amber"><i class="fa-solid fa-water"></i></div>
+            <div class="body">
+              <strong>냉각수 열회수</strong>
+              <span>설비를 식힌 냉각수가 품고 있는 열을 열교환기로 빼내 공장 난방과 온수 공급에 그대로 활용합니다.</span>
+            </div>
+          </li>
+          <li>
+            <div class="icon amber"><i class="fa-solid fa-wind"></i></div>
+            <div class="body">
+              <strong>배기 회수</strong>
+              <span>공정에서 나가는 뜨거운 배기 공기의 열로, 외부에서 들어오는 찬 공기를 미리 데워 급기 부하를 줄입니다.</span>
+            </div>
+          </li>
+          <li>
+            <div class="icon amber"><i class="fa-solid fa-gauge"></i></div>
+            <div class="body">
+              <strong>폐열 발전</strong>
+              <span>충분히 고온인 폐열로 유기랭킨사이클(ORC) 터빈을 돌려, 열을 아예 전기로 바꿔 다시 씁니다.</span>
+            </div>
+          </li>
+        </ul>
+
+        <div class="highlight-box amber" style="margin-top:6px;">
+          <p><i class="fa-solid fa-arrow-down-up-across-line" style="margin-right:6px;"></i>
+          온도가 높을수록 발전으로, 낮을수록 난방·예열로 — 회수한 열의 온도 수준에 맞춰 활용 방식을 다르게 조합하는 것이 핵심입니다.</p>
+        </div>
+      </section>
+
+      <section>
+        <div class="slide-label tone-amber"><i class="fa-solid fa-fire-flame-curved"></i> 기술 04 · 기대 효과</div>
+        <h2 class="section-title">공장 담장 안팎으로 퍼지는 효과</h2>
+
+        <ul class="ppt-list">
+          <li>
+            <div class="icon amber"><i class="fa-solid fa-leaf"></i></div>
+            <div class="body">
+              <strong>ESG 경영의 실질적 수단</strong>
+              <span>선언에 그치지 않고 실제 배출량과 전력 사용량을 줄이는, 탄소중립·RE100 목표 달성의 구체적인 실행 항목이 됩니다.</span>
+            </div>
+          </li>
+          <li>
+            <div class="icon amber"><i class="fa-solid fa-people-roof"></i></div>
+            <div class="body">
+              <strong>지역 상생으로 확장</strong>
+              <span>공장 내부 재사용을 넘어, 회수한 열을 인근 아파트나 시설에 지역난방으로 공급하는 사례로도 이어집니다.</span>
+            </div>
+          </li>
+        </ul>
+
+        <div class="highlight-box amber">
+          <p><i class="fa-solid fa-info-circle" style="margin-right:6px;"></i>
+          다만 폐열 회수 설비만으로는 한계가 있습니다. 모은 열을 <strong>언제, 어디에 얼마나 보낼지 결정하는 시스템</strong>이 있어야 효과가 실제 숫자로 이어집니다 — 그래서 다음 두 기술이 필요합니다.</p>
+        </div>
+      </section>
+
+      <section>
+        <div class="slide-label"><i class="fa-solid fa-gauge-high"></i> 기술 05 · EMS</div>
+        <h2 class="section-title">모은 열을 어디로 보낼지 결정하는 두뇌</h2>
+
+        <div class="two-col">
+          <div class="col-a">
+            <p style="margin-bottom:14px;">폐열회수 설비가 아무리 열을 잘 모아도, 그 열을 지금 이 순간 어느 라인에 보낼지 판단하는 장치가 없다면 남는 열은 그냥 흘려보내게 됩니다. <strong>EMS(에너지관리시스템)</strong>는 생산설비·공조·조명·폐열배관 등 공장 안 모든 에너지 사용처의 데이터를 실시간으로 모으고, 분석하고, 제어까지 하는 통합 플랫폼입니다.</p>
+            <div class="highlight-box">
+              <p><i class="fa-solid fa-lightbulb" style="margin-right:6px;"></i>
+              쉽게 말해 4번 기술이 <strong>열을 모으는 배관</strong>이라면, EMS는 <strong>그 배관의 밸브를 실시간으로 여닫는 관제탑</strong>입니다.</p>
+            </div>
+          </div>
+          <div class="col-b">
+            <div class="flow-vertical">
+              <div class="flow-step">
+                <strong>① 계측 · 센서</strong>
+                <span>배관 온도, 설비별 전력량을 실시간 수집</span>
+              </div>
+              <div class="flow-arrow-down"><i class="fa-solid fa-angle-down"></i></div>
+              <div class="flow-step">
+                <strong>② 데이터 통합 (IoT/SCADA)</strong>
+                <span>흩어진 신호를 하나의 데이터베이스로 모음</span>
+              </div>
+              <div class="flow-arrow-down"><i class="fa-solid fa-angle-down"></i></div>
+              <div class="flow-step">
+                <strong>③ 분석 · 최적화</strong>
+                <span>어디로 열·전력을 보낼지 알고리즘이 계산</span>
+              </div>
+              <div class="flow-arrow-down"><i class="fa-solid fa-angle-down"></i></div>
+              <div class="flow-step">
+                <strong>④ 자동 제어</strong>
+                <span>밸브·부하를 사람 개입 없이 즉시 조정</span>
+              </div>
+            </div>
+          </div>
+        </div>
+      </section>
+
+      <section>
+        <div class="slide-label"><i class="fa-solid fa-gauge-high"></i> 기술 05 · 적용</div>
+        <h2 class="section-title">EMS가 있을 때와 없을 때의 차이</h2>
+
+        <div class="tri-grid">
+          <div class="tri-card">
+            <div class="num-badge"><i class="fa-solid fa-xmark"></i></div>
+            <h3>EMS 없이 회수만 할 때</h3>
+            <p>폐열 배관 온도가 계속 올라가도 그 사실을 아는 사람이 없다면, 남는 열은 그냥 대기로 방출되고 회수 설비 투자 효과는 절반만 남습니다.</p>
+          </div>
+          <div class="tri-card">
+            <div class="num-badge"><i class="fa-solid fa-check"></i></div>
+            <h3>EMS로 실시간 배분할 때</h3>
+            <p>배관 열량과 각 라인 수요를 동시에 보면서, 열이 남는 구역에서 부족한 구역으로 밸브를 자동으로 돌려 회수한 열의 실사용률을 끌어올립니다.</p>
+          </div>
+          <div class="tri-card">
+            <div class="num-badge"><i class="fa-solid fa-plug"></i></div>
+            <h3>피크 전력 대응</h3>
+            <p>전력 사용이 몰리는 시간대를 미리 감지해 일부 설비의 부하를 분산시켜, 순간 최대 전력(피크)으로 매겨지는 전기요금 구조에도 대응합니다.</p>
+          </div>
+        </div>
+
+        <div class="highlight-box" style="margin-top:20px;">
+          <p><i class="fa-solid fa-circle-info" style="margin-right:6px;"></i>
+          즉 EMS는 4번 기술의 효과를 <strong>실제 절감액으로 바꾸는 마지막 단계</strong>입니다. 그런데 EMS도 "지금 상황"만 보고 반응한다는 한계가 있습니다 — 그래서 한 걸음 더 앞을 내다보는 6번 기술이 이어집니다.</p>
+        </div>
+      </section>
+
+      <section>
+        <div class="slide-label"><i class="fa-solid fa-chart-line"></i> 기술 06 · 예측 기반 연동</div>
+        <h2 class="section-title">생산 계획이 바뀌면 에너지도 같이 흔들린다</h2>
+
+        <ul class="ppt-list">
+          <li>
+            <div class="icon"><i class="fa-solid fa-arrows-spin"></i></div>
+            <div class="body">
+              <strong>수시로 바뀌는 생산 스케줄</strong>
+              <span>반도체 생산량은 시장 수요와 장비 가동률에 따라 자주 조정되고, 그때마다 전력·냉각 수요도 함께 출렁입니다.</span>
+            </div>
+          </li>
+          <li>
+            <div class="icon"><i class="fa-solid fa-clock"></i></div>
+            <div class="body">
+              <strong>EMS는 "이미 벌어진 일"에 대응할 뿐</strong>
+              <span>실시간 제어는 변화가 일어난 다음에 반응하는 방식이라, 생산이 갑자기 몰리는 순간의 비효율까지는 막기 어렵습니다.</span>
+            </div>
+          </li>
+          <li>
+            <div class="icon"><i class="fa-solid fa-crystal-ball"></i></div>
+            <div class="body">
+              <strong>그래서 "미리 안다"가 필요하다</strong>
+              <span>수요 예측 기반 생산계획(APS)과 EMS를 연동해, 생산이 몰릴 시간대를 미리 계산하고 전력·냉각·폐열회수 배분을 사전에 조정하는 것이 이 기술의 핵심입니다.</span>
+            </div>
+          </li>
+        </ul>
+      </section>
+
+      <section>
+        <div class="slide-label"><i class="fa-solid fa-chart-line"></i> 기술 06 · 작동 구조</div>
+        <h2 class="section-title">예측이 설비를 미리 움직이기까지</h2>
+
+        <div class="flow-horizontal">
+          <div class="flow-box">
+            <div class="ico"><i class="fa-solid fa-magnifying-glass-chart"></i></div>
+            <strong>수요 예측</strong>
+            <p>시계열 데이터로 향후 생산 물량 예측</p>
+          </div>
+          <div class="flow-connector"><i class="fa-solid fa-arrow-right"></i></div>
+          <div class="flow-box">
+            <div class="ico"><i class="fa-solid fa-diagram-project"></i></div>
+            <strong>생산계획 (APS)</strong>
+            <p>예측치를 반영해 라인별 가동 일정 수립</p>
+          </div>
+          <div class="flow-connector"><i class="fa-solid fa-arrow-right"></i></div>
+          <div class="flow-box">
+            <div class="ico"><i class="fa-solid fa-cube"></i></div>
+            <strong>디지털 트윈 검증</strong>
+            <p>실제 반영 전 가상 환경에서 시뮬레이션</p>
+          </div>
+          <div class="flow-connector"><i class="fa-solid fa-arrow-right"></i></div>
+          <div class="flow-box">
+            <div class="ico"><i class="fa-solid fa-sliders"></i></div>
+            <strong>EMS 사전 조정</strong>
+            <p>부하 몰릴 시간대의 냉각·회수 설비를 선반영</p>
+          </div>
+        </div>
+
+        <div class="highlight-box" style="margin-top:24px;">
+          <p><i class="fa-solid fa-battery-full" style="margin-right:6px;"></i>
+          이렇게 하면 전력 피크가 완만해져 요금 부담이 줄고, 생산 물량이 늘어나는 시간대에 맞춰 열교환 용량도 미리 확보되어 폐열 회수율 자체가 올라갑니다.</p>
+        </div>
+      </section>
+
+      <section>
+        <div class="slide-label"><i class="fa-solid fa-diagram-project"></i> 종합</div>
+        <h2 class="section-title">셋이 겹쳐야 완성되는 하나의 순환</h2>
+
+        <div class="layer-stack">
+          <div class="layer l1">
+            <div class="l-badge"><i class="fa-solid fa-fire-flame-curved"></i></div>
+            <div class="l-body">
+              <strong>하드웨어 · 폐열 회수 시스템</strong>
+              <span>냉각수·배기·고온 폐열에서 실제로 에너지를 붙잡아내는 물리적 설비</span>
+            </div>
+          </div>
+          <div class="layer l2">
+            <div class="l-badge"><i class="fa-solid fa-gauge-high"></i></div>
+            <div class="l-body">
+              <strong>관제 · EMS</strong>
+              <span>붙잡은 에너지를 실시간으로 어디에 얼마나 보낼지 판단하고 제어</span>
+            </div>
+          </div>
+          <div class="layer l3">
+            <div class="l-badge"><i class="fa-solid fa-chart-line"></i></div>
+            <div class="l-body">
+              <strong>지능 · 예측 기반 수요-생산 연동</strong>
+              <span>앞으로의 생산 흐름을 미리 읽어 EMS의 판단 시점을 당겨줌</span>
+            </div>
+          </div>
+        </div>
+
+        <div class="highlight-box" style="margin-top:22px;">
+          <p><i class="fa-solid fa-quote-left" style="margin-right:6px;"></i>
+          설비만 있으면 열이 새고, 관제만 있으면 대응이 늦고, 예측만 있으면 실행할 수단이 없습니다. 세 층이 함께 맞물릴 때 비로소 "버리지 않는 공장"에 가까워집니다.</p>
+        </div>
+      </section>
+
+      <section class="end-slide">
+        <div style="text-align:center; padding: 16px 0;">
+          <div style="font-size:2em; margin-bottom:20px;">🔧</div>
+          <h1>감사합니다</h1>
+          <div class="title-divider"></div>
+          <p style="color:rgba(255,255,255,0.65); font-size:0.72em; margin:0;">
+            버려지던 가스ㆍ물ㆍ열ㆍ데이터를 다시 순환의 자원으로
+          </p>
+        </div>
+      </section>
+
+    </div>
+  </div>
+
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/reveal.js/4.3.1/reveal.min.js"></script>
+  <script>
+    Reveal.initialize({
+      hash: true,
+      controls: true,
+      progress: true,
+      center: true,
+      transition: 'slide',
+      transitionSpeed: 'fast',
+      width: 1024,
+      height: 768,
+      margin: 0.06,
+      minScale: 0.2,
+      maxScale: 2.0
+    });
+  </script>
+</body>
+</html>
