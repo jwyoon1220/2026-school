@@ -195,16 +195,22 @@
 
   /* ── flip cards ────────────────────────────────── */
   .flip-grid{ display:flex; gap:16px; }
-  .flip-card{ flex:1; height:204px; perspective:1200px; cursor:pointer; }
+  .flip-card{ flex:1; height:232px; perspective:1200px; cursor:pointer; }
   .flip-inner{ position:relative; width:100%; height:100%; transition: transform .7s var(--ease); transform-style:preserve-3d; }
   .flip-card.flipped .flip-inner{ transform: rotateY(180deg); }
   .flip-face{ position:absolute; inset:0; -webkit-backface-visibility:hidden; backface-visibility:hidden; border-radius:16px; border:1px solid var(--border); padding:18px; display:flex; flex-direction:column; }
-  .flip-front{ background: var(--surface); align-items:center; justify-content:center; text-align:center; gap:10px; }
-  .flip-front .ico{ width:46px; height:46px; border-radius:13px; background: rgba(224,160,58,.16); color: var(--amber); display:flex; align-items:center; justify-content:center; font-size:1.15em; }
-  .flip-front strong{ font-size:0.76em; }
+  .flip-front{ background: var(--surface); text-align:left; gap:9px; transition: border-color .25s, background .25s; }
+  .flip-card:hover .flip-front{ border-color: rgba(224,160,58,.4); background: rgba(224,160,58,.06); }
+  .flip-front .fc-top{ display:flex; align-items:center; justify-content:space-between; }
+  .flip-front .ico{ width:42px; height:42px; border-radius:12px; background: rgba(224,160,58,.16); color: var(--amber); display:flex; align-items:center; justify-content:center; font-size:1.05em; }
+  .flip-front strong{ font-size:0.8em; }
+  .flip-front p{ font-size:0.62em !important; color: var(--ink-3) !important; margin:0 !important; line-height:1.6 !important; flex:1; }
   .flip-front .badge{ font-family: var(--mono); font-size:0.42em; color: var(--ink-3); border:1px solid var(--border); border-radius:100px; padding:3px 10px; }
-  .flip-back{ background: rgba(224,160,58,.1); transform: rotateY(180deg); justify-content:center; }
-  .flip-back p{ font-size:0.62em !important; margin:0 !important; color:#f2ddb4 !important; line-height:1.6 !important; }
+  .flip-front .fc-flip{ font-family: var(--mono); font-size:0.44em; color: var(--amber); align-self:flex-start; opacity:.85; }
+  .flip-back{ background: rgba(224,160,58,.1); transform: rotateY(180deg); justify-content:center; align-items:center; text-align:center; gap:12px; }
+  .flip-back .fc-tag{ font-family: var(--mono); font-size:0.44em; letter-spacing:.06em; color: var(--amber); border:1px solid rgba(224,160,58,.4); border-radius:100px; padding:3px 12px; }
+  .flip-back p{ font-size:0.64em !important; margin:0 !important; color:#f6e3bd !important; line-height:1.9 !important; }
+  .flip-back p i{ color: var(--amber); font-size:0.8em; }
 
   /* ── toggle ────────────────────────────────────── */
   .toggle-row{ display:flex; align-items:center; gap:14px; margin: 4px 0 14px; }
@@ -274,16 +280,20 @@
   @keyframes pulseArrow{ 0%,100%{ opacity:.3; transform:translateY(0);} 50%{ opacity:1; transform:translateY(2px);} }
 
   /* ── vicious-cycle diagram ─────────────────────── */
-  .loop-diagram{ position:relative; width:210px; height:210px; }
+  .loop-shell{ display:flex; align-items:center; gap:22px; margin-top:6px; }
+  .loop-diagram{ position:relative; width:200px; height:200px; flex-shrink:0; }
   .loop-ring{ position:absolute; inset:12px; border-radius:50%; border:2px dashed rgba(224,160,58,.4); animation: spin 16s linear infinite; }
   .loop-diagram:hover .loop-ring{ animation-play-state: paused; }
   @keyframes spin{ to{ transform: rotate(360deg);} }
-  .loop-node{ position:absolute; width:66px; height:66px; border-radius:50%; background:var(--surface); border:1px solid var(--border); display:flex; flex-direction:column; align-items:center; justify-content:center; gap:2px; color:var(--amber); transition:transform .25s var(--ease-out-back); }
+  .loop-node{ position:absolute; width:64px; height:64px; border-radius:50%; background:var(--surface); border:1px solid var(--border); display:flex; flex-direction:column; align-items:center; justify-content:center; gap:2px; color:var(--amber); cursor:pointer; transition:transform .25s var(--ease-out-back), background .2s, border-color .2s; }
   .loop-node:hover{ transform:scale(1.14); background:rgba(224,160,58,.16); }
+  .loop-node.active{ background:rgba(224,160,58,.22); border-color:rgba(224,160,58,.6); box-shadow:0 0 20px rgba(224,160,58,.3); }
   .loop-node span{ font-size:9px; color:var(--ink-2); font-weight:600; }
-  .loop-node.ln1{ top:0; left:50%; margin-left:-33px; }
+  .loop-node.ln1{ top:0; left:50%; margin-left:-32px; }
   .loop-node.ln2{ bottom:12px; right:0; } .loop-node.ln3{ bottom:12px; left:0; }
   .loop-center{ position:absolute; inset:0; display:flex; align-items:center; justify-content:center; font-family:var(--mono); font-size:10px; color:var(--ink-3); letter-spacing:.05em; }
+  .loop-detail{ flex:1; font-size:0.7em !important; color:var(--ink-2) !important; margin:0 !important; padding:14px 16px; background:rgba(224,160,58,.08); border:1px solid rgba(224,160,58,.22); border-left:3px solid var(--amber); border-radius:12px; line-height:1.6 !important; }
+  .loop-detail i{ color:var(--amber); }
 
   /* ── reveal chrome ─────────────────────────────── */
   .reveal .progress{ height:3px; color: var(--blue); background: rgba(255,255,255,.06); }
@@ -349,12 +359,15 @@
             <div class="stat-tile"><span class="num" data-count="23500" data-suffix="배">0</span><span class="lbl">세정가스 SF6의<br>온난화지수 (CO₂ 대비)</span></div>
             <div class="stat-tile tone-amber"><span class="num-text">24H</span><span class="lbl">멈추지 않는<br>냉각 설비</span></div>
           </div>
-          <div class="loop-diagram" id="loop1" style="margin:6px auto 0;">
-            <div class="loop-ring"></div>
-            <div class="loop-node ln1"><i class="fa-solid fa-fire"></i><span>발열</span></div>
-            <div class="loop-node ln2"><i class="fa-solid fa-snowflake"></i><span>냉각</span></div>
-            <div class="loop-node ln3"><i class="fa-solid fa-plug-circle-bolt"></i><span>전력소모</span></div>
-            <div class="loop-center"><span>악순환</span></div>
+          <div class="loop-shell">
+            <div class="loop-diagram" id="loop1">
+              <div class="loop-ring"></div>
+              <div class="loop-node ln1" data-d="① 고온 공정에서 막대한 열이 발생합니다."><i class="fa-solid fa-fire"></i><span>발열</span></div>
+              <div class="loop-node ln2" data-d="② 그 열을 식히려 대규모 냉각 설비가 돌아갑니다."><i class="fa-solid fa-snowflake"></i><span>냉각</span></div>
+              <div class="loop-node ln3" data-d="③ 냉각에 쓴 전력이 다시 열을 만들어 — 처음으로 돌아갑니다."><i class="fa-solid fa-plug-circle-bolt"></i><span>전력소모</span></div>
+              <div class="loop-center"><span>악순환</span></div>
+            </div>
+            <p class="loop-detail" id="loopDetail"><i class="fa-solid fa-hand-pointer" style="margin-right:6px;"></i>각 단계를 눌러 보세요 — 왜 악순환이 되는지 짚어 줍니다.</p>
           </div>
         </div>
         <div class="col-b">
@@ -483,19 +496,34 @@
     <section>
       <div class="chip amber"><i class="fa-solid fa-fire-flame-curved"></i> SEC.04 · 폐열 회수 — 방법</div>
       <h2 class="section-title">열을 붙잡는 <span class="accent">세 가지 방식</span></h2>
-      <p class="hint" style="margin-bottom:14px;">카드를 클릭하면 뒤집혀 상세 설명이 나타납니다</p>
+      <p class="hint" style="margin-bottom:14px;">설명은 그대로 보이고, 카드를 클릭하면 <span style="color:var(--amber)">실제 적용 예시</span>가 나타납니다</p>
       <div class="flip-grid">
         <div class="flip-card"><div class="flip-inner">
-          <div class="flip-face flip-front"><div class="ico"><i class="fa-solid fa-water"></i></div><strong>냉각수 회수</strong><span class="badge">LOW TEMP</span></div>
-          <div class="flip-face flip-back"><p>설비를 식힌 냉각수가 품은 열을 열교환기로 빼내 공장 난방과 온수 공급에 그대로 활용합니다.</p></div>
+          <div class="flip-face flip-front">
+            <div class="fc-top"><div class="ico"><i class="fa-solid fa-water"></i></div><span class="badge">LOW TEMP</span></div>
+            <strong>냉각수 회수</strong>
+            <p>설비를 식힌 냉각수의 열을 열교환기로 빼내 공장 난방·온수로 활용합니다.</p>
+            <span class="fc-flip"><i class="fa-solid fa-rotate"></i> 예시 보기</span>
+          </div>
+          <div class="flip-face flip-back"><span class="fc-tag">적용 예시</span><p>30~60℃ 냉각수<br><i class="fa-solid fa-arrow-down"></i> 열교환기<br><i class="fa-solid fa-arrow-down"></i> 사무동 급탕·난방</p></div>
         </div></div>
         <div class="flip-card"><div class="flip-inner">
-          <div class="flip-face flip-front"><div class="ico"><i class="fa-solid fa-wind"></i></div><strong>배기 회수</strong><span class="badge">MID TEMP</span></div>
-          <div class="flip-face flip-back"><p>배출되는 뜨거운 공기의 열로 외부에서 들어오는 찬 공기를 미리 데워 급기 부하를 줄입니다.</p></div>
+          <div class="flip-face flip-front">
+            <div class="fc-top"><div class="ico"><i class="fa-solid fa-wind"></i></div><span class="badge">MID TEMP</span></div>
+            <strong>배기 회수</strong>
+            <p>배출되는 뜨거운 공기의 열로 외부에서 들어오는 찬 공기를 미리 데웁니다.</p>
+            <span class="fc-flip"><i class="fa-solid fa-rotate"></i> 예시 보기</span>
+          </div>
+          <div class="flip-face flip-back"><span class="fc-tag">적용 예시</span><p>공정 배기(더운 공기)<br><i class="fa-solid fa-arrow-down"></i> 열회수 환기(HRV)<br><i class="fa-solid fa-arrow-down"></i> 급기 예열 → 공조 부하↓</p></div>
         </div></div>
         <div class="flip-card"><div class="flip-inner">
-          <div class="flip-face flip-front"><div class="ico"><i class="fa-solid fa-bolt-lightning"></i></div><strong>폐열 발전</strong><span class="badge">HIGH TEMP</span></div>
-          <div class="flip-face flip-back"><p>고온 폐열로 유기랭킨사이클(ORC) 터빈을 돌려 열을 아예 전기로 바꿔 다시 씁니다.</p></div>
+          <div class="flip-face flip-front">
+            <div class="fc-top"><div class="ico"><i class="fa-solid fa-bolt-lightning"></i></div><span class="badge">HIGH TEMP</span></div>
+            <strong>폐열 발전</strong>
+            <p>고온 폐열로 유기랭킨사이클(ORC) 터빈을 돌려 전기로 바꿉니다.</p>
+            <span class="fc-flip"><i class="fa-solid fa-rotate"></i> 예시 보기</span>
+          </div>
+          <div class="flip-face flip-back"><span class="fc-tag">적용 예시</span><p>고온 증기·열매체<br><i class="fa-solid fa-arrow-down"></i> ORC 터빈 → 발전기<br><i class="fa-solid fa-arrow-down"></i> 전력 재사용</p></div>
         </div></div>
       </div>
       <div class="highlight amber" style="margin-top:18px;"><p><i class="fa-solid fa-arrow-down-up-across-line" style="margin-right:6px;"></i>온도가 높을수록 발전으로, 낮을수록 난방·예열로 — 열의 온도 수준에 맞춰 활용 방식을 조합하는 것이 핵심입니다.</p></div>
@@ -727,6 +755,18 @@
         document.querySelectorAll('.orbit-node').forEach(function(n){ n.classList.remove('active'); });
         node.classList.add('active');
         document.getElementById('orbit-detail').innerHTML = detail[node.dataset.i];
+      });
+    });
+  })();
+
+  /* ============ vicious-cycle loop (SEC.00) ============ */
+  (function(){
+    var out=document.getElementById('loopDetail');
+    document.querySelectorAll('#loop1 .loop-node').forEach(function(node){
+      node.addEventListener('click', function(){
+        document.querySelectorAll('#loop1 .loop-node').forEach(function(n){ n.classList.remove('active'); });
+        node.classList.add('active');
+        if(out) out.innerHTML = '<i class="fa-solid fa-circle-arrow-right" style="margin-right:6px;"></i>' + node.dataset.d;
       });
     });
   })();
