@@ -245,17 +245,17 @@
   .flow-h-detail p{ font-size:0.66em !important; margin:0 !important; }
 
   /* ── EMS dashboard ─────────────────────────────── */
-  .dash{ display:flex; gap:20px; align-items:center; }
+  .dash{ display:flex; gap:26px; align-items:center; padding:30px 32px; }
   .gauge-wrap{ position:relative; width:148px; height:148px; flex-shrink:0; }
   .gauge-wrap svg{ transform: rotate(-90deg); }
   .gauge-val{ position:absolute; inset:0; display:flex; flex-direction:column; align-items:center; justify-content:center; }
   .gauge-val .n{ font-family: var(--mono); font-size:1.3em; font-weight:700; color: var(--aqua); }
   .gauge-val .u{ font-size:0.4em; color: var(--ink-3); margin-top:2px; }
   .dash-right{ flex:1; min-width:0; }
-  .dash-readout{ display:flex; gap:10px; margin-top:10px; }
-  .readout-tile{ flex:1; background: rgba(255,255,255,.03); border:1px solid var(--border); border-radius:11px; padding:9px 10px; text-align:center; }
-  .readout-tile .n{ font-family: var(--mono); font-size:0.82em; font-weight:700; color: var(--ink-1); display:block; }
-  .readout-tile .l{ font-size:0.4em; color: var(--ink-3); }
+  .dash-readout{ display:flex; gap:12px; margin-top:14px; }
+  .readout-tile{ flex:1; background: rgba(255,255,255,.03); border:1px solid var(--border); border-radius:12px; padding:14px 12px; text-align:center; }
+  .readout-tile .n{ font-family: var(--mono); font-size:0.96em; font-weight:700; color: var(--ink-1); display:block; }
+  .readout-tile .l{ font-size:0.42em; color: var(--ink-3); }
   .live-dot{ width:7px; height:7px; border-radius:50%; background: var(--good); display:inline-block; margin-right:7px; box-shadow:0 0 7px var(--good); animation: blink 1.6s infinite; }
   @keyframes blink{ 0%,100%{ opacity:1;} 50%{ opacity:.3; } }
 
@@ -440,11 +440,12 @@
             <li><div class="icon aqua"><i class="fa-solid fa-filter-circle-xmark"></i></div><div class="body"><strong>다단계 정제</strong><span>역삼투 · 자외선 · 이온교환을 거쳐 초순수 수준으로 되돌립니다.</span></div></li>
             <li><div class="icon aqua"><i class="fa-solid fa-recycle"></i></div><div class="body"><strong>이중 효과 — 용수↓ 폐수↓</strong><span>새로 끌어오는 물과 밖으로 내보내는 폐수를 동시에 줄입니다.</span></div></li>
           </ul>
+          <div class="highlight aqua"><p><i class="fa-solid fa-droplet" style="margin-right:6px;"></i>초순수 한 방울을 만드는 데도 여러 정제 단계가 필요합니다 — 그래서 <strong>다시 쓰는 것</strong> 자체가 곧 에너지 절약입니다.</p></div>
         </div>
         <div class="col-b">
           <div class="chart-frame">
             <div class="cf-title"><i class="fa-solid fa-chart-pie"></i> 사용 후 물의 행선지</div>
-            <div class="chart-box" style="height:212px;"><canvas data-chart="water"></canvas></div>
+            <div class="chart-box" style="height:280px;"><canvas data-chart="water"></canvas></div>
             <div class="cf-note">개념 예시 — 재사용 전환 비율이 높을수록 신규 취수·폐수가 줄어듦</div>
           </div>
         </div>
@@ -574,7 +575,7 @@
           <div class="gauge-val"><span class="n" id="gaugeNum">--</span><span class="u">폐열 회수 활용률</span></div>
         </div>
         <div class="dash-right">
-          <div class="chart-box" style="height:120px;"><canvas data-chart="emsLive"></canvas></div>
+          <div class="chart-box" style="height:150px;"><canvas data-chart="emsLive"></canvas></div>
           <div class="dash-readout">
             <div class="readout-tile"><span class="n" id="rPeak">--</span><span class="l">배관 온도(℃)</span></div>
             <div class="readout-tile"><span class="n" id="rLoad">--</span><span class="l">부하 분산 라인</span></div>
@@ -598,7 +599,7 @@
           </ul>
         </div>
         <div class="col-b">
-          <div class="media" style="height:300px;">
+          <div class="media" style="height:360px;">
             <img src="https://commons.wikimedia.org/wiki/Special:FilePath/Datacenter_Rack.jpg?width=640" alt="데이터센터 서버랙" loading="lazy" onerror="this.closest('.media').classList.add('img-failed')">
             <div class="m-cap"><i class="fa-solid fa-server"></i>DATA PIPELINE · 예측 모델이 돌아가는 곳</div>
           </div>
