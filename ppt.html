@@ -67,21 +67,27 @@
   }
 
   .reveal{ font-family: var(--sans); color: var(--ink-1); font-size: 25px; }
-  .reveal .slides{ z-index: 2; }
+  .reveal .slides{ z-index: 2; height: 100%; }
   .reveal ::selection{ background: rgba(57,135,229,.35); }
 
-  .reveal .slides section{
+  /* full-height cards: the section fills the stage and vertically centers its content */
+  .reveal .slides > section{
     background: linear-gradient(160deg, rgba(22,25,40,.82) 0%, rgba(9,10,20,.9) 100%);
     border: 1px solid var(--border);
     border-radius: 24px;
-    padding: 44px 54px 38px;
+    padding: 40px 54px;
     box-shadow: 0 40px 90px rgba(0,0,0,.5), inset 0 1px 0 rgba(255,255,255,.05);
     -webkit-backdrop-filter: blur(7px) saturate(1.1);
     backdrop-filter: blur(7px) saturate(1.1);
     text-align: left;
-    height: 100%;
     box-sizing: border-box;
+    height: 100%;
+    display: flex !important;
+    flex-direction: column;
+    justify-content: center;
   }
+  /* the content should never overspill the card top/bottom */
+  .reveal .slides > section > *{ flex-shrink: 0; }
 
   .reveal h1, .reveal h2, .reveal h3{ font-family: var(--sans); text-transform: none; letter-spacing: -0.02em; }
   .reveal h1{ font-size: 1.9em; font-weight: 800; line-height: 1.28; color: var(--ink-1); margin: 0 0 14px; }
@@ -149,6 +155,16 @@
   .chart-frame .cf-note{ font-family: var(--mono); font-size:0.42em; color: var(--ink-3); margin-top:6px; letter-spacing:.02em; }
   .chart-box{ position:relative; width:100%; }
   .chart-box canvas{ display:block; }
+
+  /* ── media (photography) ───────────────────────── */
+  .media{ position:relative; width:100%; border-radius:14px; overflow:hidden; border:1px solid var(--border); box-shadow:0 14px 40px rgba(0,0,0,.45); background:#0c0e18; }
+  .media img{ width:100%; height:100%; object-fit:cover; display:block; transition: transform .7s var(--ease); }
+  .media:hover img{ transform: scale(1.06); }
+  .media .m-cap{ position:absolute; left:0; right:0; bottom:0; padding:9px 13px; font-family:var(--mono); font-size:0.42em; letter-spacing:.02em; color:#eef1fa; background:linear-gradient(transparent, rgba(4,5,11,.9)); }
+  .media .m-cap i{ color: var(--blue-2); margin-right:6px; }
+  .media.img-failed{ background:linear-gradient(135deg, rgba(57,135,229,.2), rgba(144,133,233,.16)); }
+  .media.img-failed img{ display:none; }
+  .media.img-failed::before{ content:"\f03e"; font-family:"Font Awesome 6 Free"; font-weight:900; position:absolute; inset:0; display:flex; align-items:center; justify-content:center; font-size:1.6em; color:rgba(255,255,255,.35); }
 
   /* ── title slide ───────────────────────────────── */
   .title-slide{ background: radial-gradient(ellipse at 28% 18%, rgba(57,135,229,.22), transparent 55%), radial-gradient(ellipse at 78% 82%, rgba(144,133,233,.18), transparent 55%), linear-gradient(180deg,#06070f,#040508) !important; }
@@ -446,14 +462,18 @@
             <li><div class="icon amber"><i class="fa-solid fa-repeat"></i></div><div class="body"><strong>냉각이 또 다른 전력 소비를 부른다</strong><span>열을 빼내려고 칠러가 돌수록 전력이 늘고, 그만큼 다시 열이 발생하는 흐름이 반복됩니다.</span></div></li>
             <li><div class="icon amber"><i class="fa-solid fa-trash"></i></div><div class="body"><strong>정작 열은 그대로 버려진다</strong><span>비용을 들여 빼낸 열의 대부분은 그대로 대기 중으로 방출됩니다.</span></div></li>
           </ul>
+          <div class="highlight amber" style="margin-top:16px;"><p><i class="fa-solid fa-quote-left" style="margin-right:6px;"></i>버려지는 폐열을 모아 재활용하면 에너지 비용과 탄소 배출을 함께 줄일 수 있습니다.</p></div>
         </div>
         <div class="col-b">
+          <div class="media" style="height:150px; margin-bottom:14px;">
+            <img src="https://commons.wikimedia.org/wiki/Special:FilePath/Silicon_wafer.jpg?width=640" alt="반도체 실리콘 웨이퍼" loading="lazy" onerror="this.closest('.media').classList.add('img-failed')">
+            <div class="m-cap"><i class="fa-solid fa-microchip"></i>SILICON WAFER · 고온 공정이 시작되는 지점</div>
+          </div>
           <div class="chart-frame">
             <div class="cf-title"><i class="fa-solid fa-gauge-simple-high"></i> 뽑아낸 열, 얼마나 다시 쓰나</div>
-            <div class="chart-box" style="height:210px;"><canvas data-chart="heatWaste"></canvas></div>
+            <div class="chart-box" style="height:172px;"><canvas data-chart="heatWaste"></canvas></div>
             <div class="cf-note">개념 예시 — 회수 없이는 대부분 폐기, 회수하면 상당량 재사용</div>
           </div>
-          <div class="highlight amber" style="margin-top:12px;"><p><i class="fa-solid fa-quote-left" style="margin-right:6px;"></i>버려지는 폐열을 모아 재활용하면 에너지 비용과 탄소 배출을 함께 줄일 수 있습니다.</p></div>
         </div>
       </div>
     </section>
@@ -499,14 +519,18 @@
             <div class="reach-pipe"></div>
             <div class="reach-node end"><i class="fa-solid fa-city"></i></div>
           </div>
+          <div class="highlight" style="margin-top:10px;"><p><i class="fa-solid fa-info-circle" style="margin-right:6px;"></i>단, 모은 열을 <strong>언제·어디에·얼마나</strong> 보낼지 결정하는 시스템이 없으면 효과는 절반만 남습니다.</p></div>
         </div>
         <div class="col-b">
+          <div class="media" style="height:140px; margin-bottom:14px;">
+            <img src="https://commons.wikimedia.org/wiki/Special:FilePath/District_heating_pipes.JPG?width=640" alt="지역난방 배관" loading="lazy" onerror="this.closest('.media').classList.add('img-failed')">
+            <div class="m-cap"><i class="fa-solid fa-temperature-half"></i>DISTRICT HEATING · 회수한 열이 이동하는 배관</div>
+          </div>
           <div class="chart-frame">
             <div class="cf-title"><i class="fa-solid fa-chart-column"></i> 회수 전 vs 후 (개념 지수)</div>
-            <div class="chart-box" style="height:212px;"><canvas data-chart="heatEffect"></canvas></div>
+            <div class="chart-box" style="height:168px;"><canvas data-chart="heatEffect"></canvas></div>
             <div class="cf-note">기준 100 대비 상대 지수(예시) — 값이 낮을수록 좋음</div>
           </div>
-          <div class="highlight" style="margin-top:12px;"><p><i class="fa-solid fa-info-circle" style="margin-right:6px;"></i>단, 모은 열을 <strong>언제·어디에·얼마나</strong> 보낼지 결정하는 시스템이 없으면 효과는 절반만 남습니다.</p></div>
         </div>
       </div>
     </section>
@@ -521,6 +545,10 @@
           <div class="highlight"><p><i class="fa-solid fa-lightbulb" style="margin-right:6px;"></i>4번이 <strong>열을 모으는 배관</strong>이라면, EMS는 그 배관의 <strong>밸브를 실시간으로 여닫는 관제탑</strong>입니다.</p></div>
         </div>
         <div class="col-b">
+          <div class="media" style="height:132px; margin-bottom:12px;">
+            <img src="https://commons.wikimedia.org/wiki/Special:FilePath/Fully_automated_control_room.jpg?width=640" alt="자동화 관제실" loading="lazy" onerror="this.closest('.media').classList.add('img-failed')">
+            <div class="m-cap"><i class="fa-solid fa-desktop"></i>CONTROL ROOM · 실시간 관제가 이뤄지는 곳</div>
+          </div>
           <p class="hint">단계를 클릭하면 상세 설명이 펼쳐집니다</p>
           <div id="emsFlow">
             <div class="flow-v-step open"><div class="flow-v-head"><span class="idx">01</span><strong>계측 · 센서</strong><i class="fa-solid fa-chevron-down chevron"></i></div><div class="flow-v-body"><p>배관 온도, 설비별 전력량을 실시간으로 수집합니다.</p></div></div>
@@ -561,11 +589,21 @@
     <section>
       <div class="chip violet"><i class="fa-solid fa-chart-line"></i> SEC.06 · 예측 기반 수요-생산 연동</div>
       <h2 class="section-title">생산 계획이 바뀌면 <span class="accent">에너지도 흔들린다</span></h2>
-      <ul class="ppt-list">
-        <li><div class="icon violet"><i class="fa-solid fa-arrows-spin"></i></div><div class="body"><strong>수시로 바뀌는 생산 스케줄</strong><span>생산량은 시장 수요와 장비 가동률에 따라 자주 조정되고, 그때마다 전력·냉각 수요도 함께 출렁입니다.</span></div></li>
-        <li><div class="icon violet"><i class="fa-solid fa-clock-rotate-left"></i></div><div class="body"><strong>EMS는 "이미 벌어진 일"에 대응할 뿐</strong><span>실시간 제어는 변화가 일어난 다음 반응하는 방식이라, 생산이 갑자기 몰리는 순간의 비효율까지는 막기 어렵습니다.</span></div></li>
-        <li><div class="icon violet"><i class="fa-solid fa-crystal-ball"></i></div><div class="body"><strong>그래서 "미리 안다"가 필요하다</strong><span>수요 예측 기반 생산계획(APS)과 EMS를 연동해 생산이 몰릴 시간대를 미리 계산하고 배분을 사전 조정합니다.</span></div></li>
-      </ul>
+      <div class="two-col">
+        <div class="col-a">
+          <ul class="ppt-list">
+            <li><div class="icon violet"><i class="fa-solid fa-arrows-spin"></i></div><div class="body"><strong>수시로 바뀌는 생산 스케줄</strong><span>생산량은 시장 수요와 장비 가동률에 따라 자주 조정되고, 그때마다 전력·냉각 수요도 함께 출렁입니다.</span></div></li>
+            <li><div class="icon violet"><i class="fa-solid fa-clock-rotate-left"></i></div><div class="body"><strong>EMS는 "이미 벌어진 일"에 대응할 뿐</strong><span>실시간 제어는 변화가 일어난 다음 반응하는 방식이라, 생산이 갑자기 몰리는 순간의 비효율까지는 막기 어렵습니다.</span></div></li>
+            <li><div class="icon violet"><i class="fa-solid fa-crystal-ball"></i></div><div class="body"><strong>그래서 "미리 안다"가 필요하다</strong><span>수요 예측 기반 생산계획(APS)과 EMS를 연동해 생산이 몰릴 시간대를 미리 계산하고 배분을 사전 조정합니다.</span></div></li>
+          </ul>
+        </div>
+        <div class="col-b">
+          <div class="media" style="height:300px;">
+            <img src="https://commons.wikimedia.org/wiki/Special:FilePath/Datacenter_Rack.jpg?width=640" alt="데이터센터 서버랙" loading="lazy" onerror="this.closest('.media').classList.add('img-failed')">
+            <div class="m-cap"><i class="fa-solid fa-server"></i>DATA PIPELINE · 예측 모델이 돌아가는 곳</div>
+          </div>
+        </div>
+      </div>
     </section>
 
     <!-- 12 · 06 예측 구조 + 차트 -->
@@ -890,7 +928,7 @@
 
   themeDefaults();
   Reveal.initialize({
-    hash:true, controls:true, progress:true, center:true,
+    hash:true, controls:true, progress:true, center:false,
     transition:'slide', transitionSpeed:'default', backgroundTransition:'fade',
     slideNumber:'c/t', width:1024, height:768, margin:0.055, minScale:0.2, maxScale:2.0
   }).then(function(){ onSlide(Reveal.getCurrentSlide()); });
