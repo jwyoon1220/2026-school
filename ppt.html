@@ -3,343 +3,359 @@
 <head>
 <meta charset="utf-8">
 <title>버려지는 것들이 다시 순환이 될 때</title>
-<meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover">
+<meta name="color-scheme" content="dark">
 
 <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/reveal.js/4.3.1/reset.min.css">
 <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/reveal.js/4.3.1/reveal.min.css">
 <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/reveal.js/4.3.1/theme/black.min.css" id="theme">
 <link rel="stylesheet" as="style" crossorigin href="https://cdn.jsdelivr.net/gh/orioncactus/pretendard@v1.3.8/dist/web/static/pretendard.css" />
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@400;500;600;700&display=swap">
 <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.0/css/all.min.css">
 
 <style>
   :root{
-    --bg:            #060810;
+    --bg:            #05060d;
     --surface:       rgba(255,255,255,.045);
-    --surface-2:     rgba(255,255,255,.075);
+    --surface-2:     rgba(255,255,255,.08);
     --border:        rgba(255,255,255,.10);
+    --border-str:    rgba(255,255,255,.18);
     --ink-1:         #fdfdfd;
-    --ink-2:         #c3c2b7;
+    --ink-2:         #c6c8d4;
     --ink-3:         #7d8296;
 
     --blue:    #3987e5;
+    --blue-2:  #5aa0f2;
     --aqua:    #23b381;
-    --amber:   #d9992e;
+    --amber:   #e0a03a;
     --violet:  #9085e9;
 
     --good:     #22c55e;
     --warn:     #fab219;
     --critical: #e2584f;
 
-    --mono: 'JetBrains Mono', ui-monospace, monospace;
-    --sans: 'Pretendard', -apple-system, BlinkMacSystemFont, 'Noto Sans KR', sans-serif;
+    --mono: 'JetBrains Mono', ui-monospace, 'SFMono-Regular', monospace;
+    --sans: 'Pretendard', -apple-system, BlinkMacSystemFont, 'Segoe UI', 'Noto Sans KR', sans-serif;
+
+    --ease: cubic-bezier(.22,.61,.36,1);
+    --ease-out-back: cubic-bezier(.34,1.56,.64,1);
   }
 
-  html, body { background: var(--bg); }
+  html, body{ background: var(--bg); margin:0; }
 
-  #bg-canvas{
-    position: fixed; inset: 0; width: 100%; height: 100%;
-    z-index: 0; pointer-events: none;
+  /* ── ambient background layers ──────────────────── */
+  #bg-canvas{ position: fixed; inset: 0; width: 100%; height: 100%; z-index: 0; pointer-events: none; }
+  #bg-aurora{
+    position: fixed; inset: -20%; z-index: 0; pointer-events: none; opacity: .9;
+    background:
+      radial-gradient(38% 42% at 18% 22%, rgba(57,135,229,.20), transparent 70%),
+      radial-gradient(34% 40% at 82% 30%, rgba(144,133,233,.16), transparent 72%),
+      radial-gradient(46% 46% at 60% 88%, rgba(35,179,129,.14), transparent 72%);
+    filter: blur(10px);
+    animation: auroraShift 22s ease-in-out infinite alternate;
+  }
+  @keyframes auroraShift{
+    0%{ transform: translate3d(0,0,0) scale(1); }
+    100%{ transform: translate3d(-3%,2%,0) scale(1.08); }
   }
   #cursor-glow{
-    position: fixed; top:0; left:0; width: 480px; height: 480px;
-    margin: -240px 0 0 -240px;
-    background: radial-gradient(circle, rgba(57,135,229,.16) 0%, rgba(144,133,233,.08) 40%, transparent 70%);
-    pointer-events: none; z-index: 1; transition: opacity .3s;
-    will-change: transform;
+    position: fixed; top:0; left:0; width: 520px; height: 520px; margin: -260px 0 0 -260px;
+    background: radial-gradient(circle, rgba(57,135,229,.16) 0%, rgba(144,133,233,.07) 42%, transparent 70%);
+    pointer-events: none; z-index: 1; will-change: transform;
   }
 
-  .reveal{
-    font-family: var(--sans);
-    color: var(--ink-1);
-    font-size: 25px;
-  }
-
-  .reveal .slides { z-index: 2; }
+  .reveal{ font-family: var(--sans); color: var(--ink-1); font-size: 25px; }
+  .reveal .slides{ z-index: 2; }
+  .reveal ::selection{ background: rgba(57,135,229,.35); }
 
   .reveal .slides section{
-    background: linear-gradient(165deg, rgba(18,20,32,.86) 0%, rgba(10,11,20,.92) 100%);
+    background: linear-gradient(160deg, rgba(22,25,40,.82) 0%, rgba(9,10,20,.9) 100%);
     border: 1px solid var(--border);
-    border-radius: 22px;
-    padding: 46px 56px 40px;
-    box-shadow: 0 30px 80px rgba(0,0,0,.45), inset 0 1px 0 rgba(255,255,255,.04);
-    backdrop-filter: blur(6px);
+    border-radius: 24px;
+    padding: 44px 54px 38px;
+    box-shadow: 0 40px 90px rgba(0,0,0,.5), inset 0 1px 0 rgba(255,255,255,.05);
+    -webkit-backdrop-filter: blur(7px) saturate(1.1);
+    backdrop-filter: blur(7px) saturate(1.1);
     text-align: left;
+    height: 100%;
+    box-sizing: border-box;
   }
 
   .reveal h1, .reveal h2, .reveal h3{ font-family: var(--sans); text-transform: none; letter-spacing: -0.02em; }
-
-  .reveal h1{ font-size: 1.9em; font-weight: 800; line-height: 1.3; color: var(--ink-1); margin: 0 0 14px; }
-  .reveal h2.section-title{ font-size: 1.14em; font-weight: 700; color: var(--ink-1); text-align:left; border:none; padding:0; margin:0 0 26px; }
+  .reveal h1{ font-size: 1.9em; font-weight: 800; line-height: 1.28; color: var(--ink-1); margin: 0 0 14px; }
+  .reveal h2.section-title{ font-size: 1.16em; font-weight: 700; color: var(--ink-1); text-align:left; border:none; padding:0; margin:0 0 24px; }
+  .reveal h2.section-title .accent{ color: var(--blue-2); }
   .reveal p, .reveal li{ font-size: 0.78em; font-weight: 400; line-height: 1.72; color: var(--ink-2); }
   .reveal strong{ color: var(--ink-1); font-weight: 700; }
+  .lead{ max-width: 640px; }
 
-  /* ── chip / label ─────────────────────────────────── */
+  /* ── chip ──────────────────────────────────────── */
   .chip{
     display:inline-flex; align-items:center; gap:8px;
-    font-family: var(--mono); font-size: 0.5em; font-weight: 600;
-    letter-spacing: 0.06em; text-transform: uppercase;
-    color: var(--blue); background: rgba(57,135,229,.12);
-    border: 1px solid rgba(57,135,229,.28);
-    border-radius: 100px; padding: 6px 16px; margin-bottom: 20px;
+    font-family: var(--mono); font-size: 0.5em; font-weight: 600; letter-spacing: 0.07em; text-transform: uppercase;
+    color: var(--blue-2); background: rgba(57,135,229,.12); border: 1px solid rgba(57,135,229,.28);
+    border-radius: 100px; padding: 6px 16px; margin-bottom: 18px;
   }
-  .chip.amber{ color: var(--amber); background: rgba(217,153,46,.14); border-color: rgba(217,153,46,.32); }
+  .chip.amber{ color: var(--amber); background: rgba(224,160,58,.14); border-color: rgba(224,160,58,.32); }
   .chip.aqua{ color: var(--aqua); background: rgba(35,179,129,.14); border-color: rgba(35,179,129,.32); }
   .chip.violet{ color: var(--violet); background: rgba(144,133,233,.14); border-color: rgba(144,133,233,.32); }
 
-  /* ── glass card ───────────────────────────────────── */
-  .card{
-    background: var(--surface); border: 1px solid var(--border);
-    border-radius: 16px; padding: 20px 22px;
-  }
+  .card{ background: var(--surface); border: 1px solid var(--border); border-radius: 16px; padding: 18px 20px; }
 
-  /* ── stat tiles w/ count-up ───────────────────────── */
-  .stat-row{ display:flex; gap:18px; margin-bottom: 26px; }
-  .stat-tile{ flex:1; background: var(--surface); border:1px solid var(--border); border-radius:14px; padding:18px 18px; text-align:center; }
-  .stat-tile .num{ font-family: var(--mono); font-size: 1.3em; font-weight: 700; color: var(--blue); display:block; line-height:1.1; }
-  .stat-tile .lbl{ font-size: 0.54em; color: var(--ink-3); margin-top:6px; display:block; line-height:1.45; }
+  /* ── stat tiles ────────────────────────────────── */
+  .stat-row{ display:flex; gap:16px; margin-bottom: 22px; }
+  .stat-tile{ flex:1; background: var(--surface); border:1px solid var(--border); border-radius:14px; padding:16px 16px; text-align:center; transition: transform .3s var(--ease), border-color .3s; }
+  .stat-tile:hover{ transform: translateY(-4px); border-color: var(--border-str); }
+  .stat-tile .num{ font-family: var(--mono); font-size: 1.3em; font-weight: 700; color: var(--blue-2); display:block; line-height:1.1; }
+  .stat-tile .lbl{ font-size: 0.52em; color: var(--ink-3); margin-top:6px; display:block; line-height:1.45; }
   .stat-tile.tone-amber .num{ color: var(--amber); }
   .stat-tile.tone-aqua .num{ color: var(--aqua); }
 
-  /* ── ppt list ─────────────────────────────────────── */
+  /* ── list ──────────────────────────────────────── */
   ul.ppt-list{ list-style:none; padding:0; margin:0; }
-  ul.ppt-list > li{ display:flex; gap:14px; align-items:flex-start; margin-bottom:16px; }
+  ul.ppt-list > li{ display:flex; gap:14px; align-items:flex-start; margin-bottom:15px; }
   ul.ppt-list > li .icon{
-    width:30px; height:30px; border-radius:8px; flex-shrink:0; margin-top:2px;
-    background: rgba(57,135,229,.14); color: var(--blue);
-    display:flex; align-items:center; justify-content:center; font-size:0.66em;
+    width:30px; height:30px; border-radius:9px; flex-shrink:0; margin-top:1px;
+    background: rgba(57,135,229,.14); color: var(--blue-2);
+    display:flex; align-items:center; justify-content:center; font-size:0.64em;
+    transition: transform .25s var(--ease-out-back);
   }
-  ul.ppt-list > li .icon.amber{ background: rgba(217,153,46,.16); color: var(--amber); }
+  ul.ppt-list > li:hover .icon{ transform: scale(1.12) rotate(-4deg); }
+  ul.ppt-list > li .icon.amber{ background: rgba(224,160,58,.16); color: var(--amber); }
   ul.ppt-list > li .icon.aqua{ background: rgba(35,179,129,.16); color: var(--aqua); }
   ul.ppt-list > li .icon.violet{ background: rgba(144,133,233,.16); color: var(--violet); }
   ul.ppt-list > li .body strong{ font-size:0.86em; display:block; margin-bottom:3px; }
-  ul.ppt-list > li .body span{ font-size:0.76em; color: var(--ink-3); }
+  ul.ppt-list > li .body span{ font-size:0.75em; color: var(--ink-3); }
 
-  /* ── highlight box ────────────────────────────────── */
-  .highlight{ background: rgba(57,135,229,.10); border:1px solid rgba(57,135,229,.24); border-radius:12px; padding:15px 20px; margin-top:14px; }
-  .highlight p{ font-size:0.72em !important; color:#cfe1fb !important; margin:0 !important; }
-  .highlight.amber{ background: rgba(217,153,46,.10); border-color: rgba(217,153,46,.26); }
-  .highlight.amber p{ color:#f5dcb0 !important; }
+  /* ── highlight ─────────────────────────────────── */
+  .highlight{ background: rgba(57,135,229,.10); border:1px solid rgba(57,135,229,.24); border-radius:12px; padding:14px 18px; margin-top:14px; }
+  .highlight p{ font-size:0.71em !important; color:#d3e2fb !important; margin:0 !important; }
+  .highlight.amber{ background: rgba(224,160,58,.10); border-color: rgba(224,160,58,.26); } .highlight.amber p{ color:#f5ddb4 !important; }
+  .highlight.aqua{ background: rgba(35,179,129,.10); border-color: rgba(35,179,129,.26); } .highlight.aqua p{ color:#c4ebd8 !important; }
+  .highlight.violet{ background: rgba(144,133,233,.10); border-color: rgba(144,133,233,.26); } .highlight.violet p{ color:#ddd8f7 !important; }
 
-  /* ── two col ──────────────────────────────────────── */
-  .two-col{ display:flex; gap:28px; align-items:flex-start; }
-  .two-col > .col-a{ flex:1.1; }
-  .two-col > .col-b{ flex:0.9; }
-  .col-b img{ width:100%; border-radius:14px; display:block; box-shadow:0 14px 40px rgba(0,0,0,.5); border:1px solid var(--border); }
-  .img-cap{ font-family: var(--mono); font-size:0.46em; color: var(--ink-3); margin-top:8px; letter-spacing:.02em; }
+  /* ── two column ────────────────────────────────── */
+  .two-col{ display:flex; gap:26px; align-items:flex-start; }
+  .two-col > .col-a{ flex:1.05; min-width:0; }
+  .two-col > .col-b{ flex:0.95; min-width:0; }
+  .hint{ font-family: var(--mono); font-size:0.46em; color: var(--ink-3); letter-spacing:.03em; margin-bottom: 10px; }
 
-  /* ── title / end slide ────────────────────────────── */
-  .title-slide{ background: radial-gradient(ellipse at 30% 20%, rgba(57,135,229,.20) 0%, transparent 55%), radial-gradient(ellipse at 75% 80%, rgba(144,133,233,.16) 0%, transparent 55%), linear-gradient(180deg, #070911 0%, #050609 100%) !important; }
-  .title-badge{ font-family: var(--mono); font-size:0.56em; letter-spacing:.08em; text-transform:uppercase; color: var(--ink-2); display:inline-flex; align-items:center; gap:10px; border:1px solid var(--border); border-radius:100px; padding:8px 20px; margin-bottom:26px; }
-  .title-badge .dot{ width:6px; height:6px; border-radius:50%; background: var(--aqua); box-shadow:0 0 8px var(--aqua); }
-  .grad-text{ background: linear-gradient(100deg, #ffffff 20%, #a9c8f7 55%, #9085e9 85%); -webkit-background-clip:text; background-clip:text; color:transparent; }
-  .title-divider{ width:52px; height:3px; background: linear-gradient(90deg, var(--blue), var(--violet)); border-radius:4px; margin:22px 0; }
-  .end-slide{ background: radial-gradient(ellipse at 50% 30%, rgba(35,179,129,.16) 0%, transparent 55%), linear-gradient(180deg, #070911 0%, #050609 100%) !important; text-align:center; }
+  /* ── chart frame ───────────────────────────────── */
+  .chart-frame{ position:relative; background: rgba(0,0,0,.24); border:1px solid var(--border); border-radius:16px; padding:14px 16px 10px; }
+  .chart-frame .cf-title{ font-size:0.6em; font-weight:600; color: var(--ink-2); display:flex; align-items:center; gap:8px; margin-bottom:6px; }
+  .chart-frame .cf-title i{ color: var(--blue-2); }
+  .chart-frame .cf-note{ font-family: var(--mono); font-size:0.42em; color: var(--ink-3); margin-top:6px; letter-spacing:.02em; }
+  .chart-box{ position:relative; width:100%; }
+  .chart-box canvas{ display:block; }
+
+  /* ── title slide ───────────────────────────────── */
+  .title-slide{ background: radial-gradient(ellipse at 28% 18%, rgba(57,135,229,.22), transparent 55%), radial-gradient(ellipse at 78% 82%, rgba(144,133,233,.18), transparent 55%), linear-gradient(180deg,#06070f,#040508) !important; }
+  .title-badge{ font-family: var(--mono); font-size:0.55em; letter-spacing:.09em; text-transform:uppercase; color: var(--ink-2); display:inline-flex; align-items:center; gap:10px; border:1px solid var(--border); border-radius:100px; padding:8px 20px; margin-bottom:26px; }
+  .title-badge .dot{ width:6px; height:6px; border-radius:50%; background: var(--aqua); box-shadow:0 0 10px var(--aqua); animation: blink 1.8s infinite; }
+  .grad-text{ background: linear-gradient(100deg,#ffffff 15%,#a9c8f7 45%,#9085e9 75%,#ffffff 100%); background-size: 220% auto; -webkit-background-clip:text; background-clip:text; color:transparent; animation: shimmer 6s linear infinite; }
+  @keyframes shimmer{ to{ background-position: 220% center; } }
+  .title-divider{ width:54px; height:3px; background: linear-gradient(90deg, var(--blue), var(--violet)); border-radius:4px; margin:22px 0; }
+  .title-track{ font-family:var(--mono); font-size:0.5em; color:var(--ink-3); margin-top:28px; letter-spacing:.04em; }
+  .title-track b{ color: var(--blue-2); font-weight:600; }
+  .end-slide{ background: radial-gradient(ellipse at 50% 32%, rgba(35,179,129,.18), transparent 55%), linear-gradient(180deg,#06070f,#040508) !important; text-align:center; display:flex; align-items:center; justify-content:center; }
   .end-slide h1{ font-size:2.05em; }
 
-  /* ── orbit menu (slide: 지도) ─────────────────────── */
+  /* ── orbit ─────────────────────────────────────── */
   .orbit-wrap{ position:relative; height: 420px; display:flex; align-items:center; justify-content:center; }
-  .orbit-ring{ position:absolute; width:300px; height:300px; border:1px dashed rgba(255,255,255,.14); border-radius:50%; }
-  .orbit-center{ position:relative; width:190px; height:190px; border-radius:50%; background: var(--surface-2); border:1px solid var(--border); display:flex; align-items:center; justify-content:center; text-align:center; padding:14px; z-index:2; }
-  .orbit-center p{ font-size:0.58em !important; color:var(--ink-2) !important; margin:0 !important; line-height:1.5 !important; }
-  .orbit-node{
-    position:absolute; width:96px; height:74px; border-radius:14px;
-    background: var(--surface); border:1px solid var(--border);
-    display:flex; flex-direction:column; align-items:center; justify-content:center; gap:6px;
-    cursor:pointer; transition: transform .25s, background .25s, border-color .25s; z-index:3;
-  }
-  .orbit-node span.n{ font-family: var(--mono); font-size:0.58em; color: var(--ink-3); }
-  .orbit-node span.t{ font-size:0.56em; font-weight:700; color: var(--ink-1); text-align:center; line-height:1.25; }
-  .orbit-node:hover, .orbit-node.active{ transform: scale(1.08); background: rgba(57,135,229,.14); border-color: rgba(57,135,229,.4); }
-  .orbit-node.active span.n{ color: var(--blue); }
-  .orbit-node.n1{ top: 4%; left: 50%; transform: translateX(-50%); }
-  .orbit-node.n2{ top: 22%; right: 2%; }
-  .orbit-node.n3{ bottom: 22%; right: 2%; }
-  .orbit-node.n4{ bottom: 4%; left: 50%; transform: translateX(-50%); }
-  .orbit-node.n5{ bottom: 22%; left: 2%; }
-  .orbit-node.n6{ top: 22%; left: 2%; }
-  .orbit-hint{ font-family: var(--mono); font-size:0.46em; color: var(--ink-3); letter-spacing:.03em; margin-bottom: 4px; }
+  .orbit-ring{ position:absolute; width:300px; height:300px; border:1px dashed rgba(255,255,255,.14); border-radius:50%; animation: spin 40s linear infinite; }
+  .orbit-center{ position:relative; width:194px; height:194px; border-radius:50%; background: var(--surface-2); border:1px solid var(--border-str); display:flex; align-items:center; justify-content:center; text-align:center; padding:16px; z-index:2; box-shadow: inset 0 0 40px rgba(57,135,229,.10); }
+  .orbit-center p{ font-size:0.56em !important; color:var(--ink-2) !important; margin:0 !important; line-height:1.55 !important; }
+  .orbit-node{ position:absolute; width:98px; height:76px; border-radius:15px; background: var(--surface); border:1px solid var(--border); display:flex; flex-direction:column; align-items:center; justify-content:center; gap:5px; cursor:pointer; transition: transform .3s var(--ease-out-back), background .25s, border-color .25s, box-shadow .25s; z-index:3; }
+  .orbit-node span.n{ font-family: var(--mono); font-size:0.56em; color: var(--ink-3); }
+  .orbit-node span.t{ font-size:0.55em; font-weight:700; color: var(--ink-1); text-align:center; line-height:1.25; }
+  .orbit-node:hover, .orbit-node.active{ transform: scale(1.1); background: rgba(57,135,229,.15); border-color: rgba(57,135,229,.45); box-shadow: 0 10px 30px rgba(57,135,229,.2); }
+  .orbit-node.active span.n{ color: var(--blue-2); }
+  .orbit-node.n1{ top: 3%; left: 50%; transform: translateX(-50%); } .orbit-node.n1:hover,.orbit-node.n1.active{ transform: translateX(-50%) scale(1.1); }
+  .orbit-node.n2{ top: 21%; right: 1%; } .orbit-node.n3{ bottom: 21%; right: 1%; }
+  .orbit-node.n4{ bottom: 3%; left: 50%; transform: translateX(-50%); } .orbit-node.n4:hover,.orbit-node.n4.active{ transform: translateX(-50%) scale(1.1); }
+  .orbit-node.n5{ bottom: 21%; left: 1%; } .orbit-node.n6{ top: 21%; left: 1%; }
 
-  /* ── tabs ─────────────────────────────────────────── */
-  .tabs{ display:flex; gap:10px; margin-bottom:20px; }
-  .tab-btn{
-    font-family: var(--sans); font-size:0.68em; font-weight:600; color: var(--ink-3);
-    background: var(--surface); border:1px solid var(--border); border-radius:10px;
-    padding:10px 16px; cursor:pointer; transition: all .2s; flex:1; text-align:center;
-  }
-  .tab-btn.active{ color:#fff; background: rgba(35,179,129,.16); border-color: rgba(35,179,129,.4); }
-  .tab-panel{ display:none; }
-  .tab-panel.active{ display:block; animation: fadeUp .35s ease; }
-  @keyframes fadeUp{ from{ opacity:0; transform: translateY(8px);} to{ opacity:1; transform:none; } }
-
-  .bar-row{ margin-bottom:14px; }
-  .bar-row .bar-lbl{ display:flex; justify-content:space-between; font-size:0.62em; color: var(--ink-2); margin-bottom:6px; }
-  .bar-row .bar-lbl .val{ font-family: var(--mono); color: var(--ink-1); }
-  .bar-track{ height:10px; border-radius:6px; background: rgba(255,255,255,.06); overflow:hidden; }
-  .bar-fill{ height:100%; border-radius:6px; width:0%; transition: width 1s cubic-bezier(.2,.8,.2,1); }
-  .bar-fill.c-warn{ background: linear-gradient(90deg, #b9420a, var(--warn)); }
-  .bar-fill.c-good{ background: linear-gradient(90deg, #0d7a3d, var(--good)); }
-  .bar-fill.c-aqua{ background: linear-gradient(90deg, #106a4c, var(--aqua)); }
-
-  /* ── flip cards ───────────────────────────────────── */
-  .flip-grid{ display:flex; gap:18px; }
-  .flip-card{ flex:1; height:210px; perspective:1200px; cursor:pointer; }
-  .flip-inner{ position:relative; width:100%; height:100%; transition: transform .6s cubic-bezier(.2,.8,.2,1); transform-style:preserve-3d; }
+  /* ── flip cards ────────────────────────────────── */
+  .flip-grid{ display:flex; gap:16px; }
+  .flip-card{ flex:1; height:204px; perspective:1200px; cursor:pointer; }
+  .flip-inner{ position:relative; width:100%; height:100%; transition: transform .7s var(--ease); transform-style:preserve-3d; }
   .flip-card.flipped .flip-inner{ transform: rotateY(180deg); }
-  .flip-face{ position:absolute; inset:0; backface-visibility:hidden; border-radius:14px; border:1px solid var(--border); padding:18px; display:flex; flex-direction:column; }
+  .flip-face{ position:absolute; inset:0; -webkit-backface-visibility:hidden; backface-visibility:hidden; border-radius:16px; border:1px solid var(--border); padding:18px; display:flex; flex-direction:column; }
   .flip-front{ background: var(--surface); align-items:center; justify-content:center; text-align:center; gap:10px; }
-  .flip-front .ico{ width:44px; height:44px; border-radius:12px; background: rgba(217,153,46,.16); color: var(--amber); display:flex; align-items:center; justify-content:center; font-size:1.1em; }
+  .flip-front .ico{ width:46px; height:46px; border-radius:13px; background: rgba(224,160,58,.16); color: var(--amber); display:flex; align-items:center; justify-content:center; font-size:1.15em; }
   .flip-front strong{ font-size:0.76em; }
-  .flip-front span.hint{ font-family: var(--mono); font-size:0.44em; color: var(--ink-3); }
-  .flip-back{ background: rgba(217,153,46,.10); transform: rotateY(180deg); justify-content:center; }
-  .flip-back p{ font-size:0.62em !important; margin:0 !important; color:#f2ddb4 !important; line-height:1.55 !important; }
+  .flip-front .badge{ font-family: var(--mono); font-size:0.42em; color: var(--ink-3); border:1px solid var(--border); border-radius:100px; padding:3px 10px; }
+  .flip-back{ background: rgba(224,160,58,.1); transform: rotateY(180deg); justify-content:center; }
+  .flip-back p{ font-size:0.62em !important; margin:0 !important; color:#f2ddb4 !important; line-height:1.6 !important; }
 
-  /* ── toggle switch ────────────────────────────────── */
-  .toggle-row{ display:flex; align-items:center; gap:14px; margin: 6px 0 16px; }
+  /* ── toggle ────────────────────────────────────── */
+  .toggle-row{ display:flex; align-items:center; gap:14px; margin: 4px 0 14px; }
   .switch{ position:relative; width:52px; height:28px; flex-shrink:0; }
   .switch input{ opacity:0; width:0; height:0; }
-  .slider-tgl{ position:absolute; inset:0; background: rgba(255,255,255,.12); border-radius:100px; cursor:pointer; transition:.3s; border:1px solid var(--border); }
-  .slider-tgl::before{ content:""; position:absolute; width:20px; height:20px; left:3px; top:3px; background:#fff; border-radius:50%; transition:.3s; }
+  .slider-tgl{ position:absolute; inset:0; background: rgba(255,255,255,.12); border-radius:100px; cursor:pointer; transition:.35s var(--ease); border:1px solid var(--border); }
+  .slider-tgl::before{ content:""; position:absolute; width:20px; height:20px; left:3px; top:3px; background:#fff; border-radius:50%; transition:.35s var(--ease-out-back); }
   .switch input:checked + .slider-tgl{ background: rgba(35,179,129,.5); }
   .switch input:checked + .slider-tgl::before{ transform: translateX(24px); }
-  .toggle-label{ font-size:0.68em; font-weight:600; color: var(--ink-2); }
+  .toggle-label{ font-size:0.66em; font-weight:600; color: var(--ink-2); }
+  .reach-diagram{ display:flex; align-items:center; justify-content:center; padding: 18px 0; }
+  .reach-node{ width:50px; height:50px; border-radius:13px; background: var(--surface); border:1px solid var(--border); display:flex; align-items:center; justify-content:center; font-size:1.05em; color: var(--amber); flex-shrink:0; }
+  .reach-pipe{ height:6px; width:56px; background: rgba(224,160,58,.35); transition: width .55s var(--ease); border-radius:4px; }
+  .reach-diagram.expanded .reach-pipe{ width: 200px; background: linear-gradient(90deg, rgba(224,160,58,.55), rgba(35,179,129,.55)); }
+  .reach-node.end{ color: var(--ink-3); transition: color .4s; } .reach-diagram.expanded .reach-node.end{ color: var(--aqua); }
 
-  .reach-diagram{ display:flex; align-items:center; justify-content:center; gap:0; padding: 22px 0; }
-  .reach-node{ width:52px; height:52px; border-radius:12px; background: var(--surface); border:1px solid var(--border); display:flex; align-items:center; justify-content:center; font-size:1.1em; color: var(--amber); flex-shrink:0; }
-  .reach-pipe{ height:6px; width:60px; background: rgba(217,153,46,.35); transition: width .5s ease; }
-  .reach-diagram.expanded .reach-pipe{ width: 220px; background: linear-gradient(90deg, rgba(217,153,46,.5), rgba(35,179,129,.5)); }
-  .reach-node.end{ color: var(--ink-3); }
-  .reach-diagram.expanded .reach-node.end{ color: var(--aqua); }
-
-  /* ── vertical flow / accordion (EMS) ─────────────── */
-  .flow-v{ display:flex; flex-direction:column; gap:0; }
-  .flow-v-step{ border:1px solid var(--border); background: var(--surface); border-radius:12px; margin-bottom:8px; overflow:hidden; cursor:pointer; }
-  .flow-v-head{ display:flex; align-items:center; gap:12px; padding:13px 16px; }
-  .flow-v-head .idx{ font-family: var(--mono); font-size:0.6em; color: var(--blue); width:20px; }
-  .flow-v-head strong{ font-size:0.72em; flex:1; }
-  .flow-v-head i.chevron{ font-size:0.6em; color: var(--ink-3); transition: transform .3s; }
+  /* ── EMS accordion ─────────────────────────────── */
+  .flow-v-step{ border:1px solid var(--border); background: var(--surface); border-radius:12px; margin-bottom:8px; overflow:hidden; cursor:pointer; transition: border-color .25s; }
+  .flow-v-step:hover{ border-color: var(--border-str); }
+  .flow-v-head{ display:flex; align-items:center; gap:12px; padding:12px 16px; }
+  .flow-v-head .idx{ font-family: var(--mono); font-size:0.58em; color: var(--blue-2); width:20px; }
+  .flow-v-head strong{ font-size:0.71em; flex:1; }
+  .flow-v-head i.chevron{ font-size:0.58em; color: var(--ink-3); transition: transform .35s var(--ease); }
   .flow-v-step.open .chevron{ transform: rotate(180deg); }
-  .flow-v-body{ max-height:0; transition: max-height .35s ease; padding:0 16px; }
-  .flow-v-step.open .flow-v-body{ max-height:120px; padding-bottom:14px; }
-  .flow-v-body p{ font-size:0.64em !important; margin:0 !important; color: var(--ink-3) !important; }
+  .flow-v-body{ max-height:0; transition: max-height .4s var(--ease); padding:0 16px; }
+  .flow-v-step.open .flow-v-body{ max-height:120px; padding-bottom:13px; }
+  .flow-v-body p{ font-size:0.63em !important; margin:0 !important; color: var(--ink-3) !important; }
 
-  /* ── horizontal flow (predictive pipeline) ────────── */
-  .flow-h{ display:flex; align-items:stretch; gap:8px; }
-  .flow-h-node{ flex:1; background: var(--surface); border:1px solid var(--border); border-radius:12px; padding:16px 10px; text-align:center; cursor:pointer; transition: border-color .2s, background .2s; }
-  .flow-h-node:hover, .flow-h-node.active{ border-color: rgba(144,133,233,.5); background: rgba(144,133,233,.10); }
-  .flow-h-node .ico{ width:36px; height:36px; margin:0 auto 8px; border-radius:10px; background: rgba(144,133,233,.16); color: var(--violet); display:flex; align-items:center; justify-content:center; font-size:0.85em; }
-  .flow-h-node strong{ font-size:0.62em; display:block; margin-bottom:4px; }
-  .flow-h-connector{ display:flex; align-items:center; color: var(--ink-3); font-size:0.8em; }
-  .flow-h-detail{ min-height: 44px; margin-top:14px; }
+  /* ── predictive flow ───────────────────────────── */
+  .flow-h{ display:flex; align-items:stretch; gap:7px; }
+  .flow-h-node{ flex:1; background: var(--surface); border:1px solid var(--border); border-radius:13px; padding:15px 8px; text-align:center; cursor:pointer; transition: border-color .25s, background .25s, transform .25s var(--ease-out-back); }
+  .flow-h-node:hover{ transform: translateY(-3px); }
+  .flow-h-node.active{ border-color: rgba(144,133,233,.5); background: rgba(144,133,233,.12); }
+  .flow-h-node .ico{ width:36px; height:36px; margin:0 auto 8px; border-radius:11px; background: rgba(144,133,233,.16); color: var(--violet); display:flex; align-items:center; justify-content:center; font-size:0.85em; }
+  .flow-h-node strong{ font-size:0.6em; display:block; }
+  .flow-h-connector{ display:flex; align-items:center; color: var(--ink-3); font-size:0.78em; }
+  .flow-h-detail{ margin-top:12px; }
   .flow-h-detail p{ font-size:0.66em !important; margin:0 !important; }
 
-  /* ── dashboard demo (EMS) ─────────────────────────── */
+  /* ── EMS dashboard ─────────────────────────────── */
   .dash{ display:flex; gap:20px; align-items:center; }
-  .gauge-wrap{ position:relative; width:150px; height:150px; flex-shrink:0; }
+  .gauge-wrap{ position:relative; width:148px; height:148px; flex-shrink:0; }
   .gauge-wrap svg{ transform: rotate(-90deg); }
   .gauge-val{ position:absolute; inset:0; display:flex; flex-direction:column; align-items:center; justify-content:center; }
   .gauge-val .n{ font-family: var(--mono); font-size:1.3em; font-weight:700; color: var(--aqua); }
-  .gauge-val .u{ font-size:0.42em; color: var(--ink-3); }
-  .dash-right{ flex:1; }
-  .spark-wrap{ background: rgba(0,0,0,.25); border:1px solid var(--border); border-radius:10px; padding:10px; margin-bottom:10px; }
-  .dash-readout{ display:flex; gap:10px; }
-  .readout-tile{ flex:1; background: rgba(255,255,255,.03); border:1px solid var(--border); border-radius:10px; padding:10px 12px; text-align:center; }
-  .readout-tile .n{ font-family: var(--mono); font-size:0.85em; font-weight:700; color: var(--ink-1); display:block; }
-  .readout-tile .l{ font-size:0.42em; color: var(--ink-3); }
-  .live-dot{ width:7px; height:7px; border-radius:50%; background: var(--good); display:inline-block; margin-right:6px; box-shadow:0 0 6px var(--good); animation: blink 1.6s infinite; }
-  @keyframes blink{ 0%,100%{ opacity:1;} 50%{ opacity:.35; } }
+  .gauge-val .u{ font-size:0.4em; color: var(--ink-3); margin-top:2px; }
+  .dash-right{ flex:1; min-width:0; }
+  .dash-readout{ display:flex; gap:10px; margin-top:10px; }
+  .readout-tile{ flex:1; background: rgba(255,255,255,.03); border:1px solid var(--border); border-radius:11px; padding:9px 10px; text-align:center; }
+  .readout-tile .n{ font-family: var(--mono); font-size:0.82em; font-weight:700; color: var(--ink-1); display:block; }
+  .readout-tile .l{ font-size:0.4em; color: var(--ink-3); }
+  .live-dot{ width:7px; height:7px; border-radius:50%; background: var(--good); display:inline-block; margin-right:7px; box-shadow:0 0 7px var(--good); animation: blink 1.6s infinite; }
+  @keyframes blink{ 0%,100%{ opacity:1;} 50%{ opacity:.3; } }
 
-  /* ── line chart (predictive) ──────────────────────── */
-  .chart-legend{ display:flex; gap:18px; margin-bottom:10px; }
-  .chart-legend .item{ display:flex; align-items:center; gap:7px; font-size:0.6em; color: var(--ink-2); }
-  .chart-legend .sw{ width:14px; height:3px; border-radius:2px; }
-  .linechart-wrap{ background: rgba(0,0,0,.22); border:1px solid var(--border); border-radius:12px; padding:14px 16px 6px; }
-
-  /* ── layer stack (synthesis) ──────────────────────── */
-  .layer-stack{ display:flex; flex-direction:column; gap:6px; }
-  .layer{ display:flex; align-items:center; gap:18px; border-radius:14px; padding:15px 20px; border:1px solid var(--border); transition: transform .25s, box-shadow .25s; position:relative; }
-  .layer:hover{ transform: translateX(6px); }
-  .layer .l-badge{ width:40px; height:40px; border-radius:10px; display:flex; align-items:center; justify-content:center; font-size:0.95em; flex-shrink:0; color:#0b0b0b; }
-  .layer .l-body strong{ font-size:0.78em; display:block; margin-bottom:2px; }
-  .layer .l-body span{ font-size:0.62em; color: var(--ink-3); }
-  .layer.l1{ background: rgba(217,153,46,.09); } .layer.l1 .l-badge{ background: var(--amber); }
+  /* ── layer stack ───────────────────────────────── */
+  .layer-stack{ display:flex; flex-direction:column; gap:5px; }
+  .layer{ display:flex; align-items:center; gap:18px; border-radius:15px; padding:14px 20px; border:1px solid var(--border); transition: transform .3s var(--ease); }
+  .layer:hover{ transform: translateX(8px); }
+  .layer .l-badge{ width:40px; height:40px; border-radius:11px; display:flex; align-items:center; justify-content:center; font-size:0.95em; flex-shrink:0; color:#0b0b0b; }
+  .layer .l-body strong{ font-size:0.77em; display:block; margin-bottom:2px; }
+  .layer .l-body span{ font-size:0.61em; color: var(--ink-3); }
+  .layer.l1{ background: rgba(224,160,58,.09); } .layer.l1 .l-badge{ background: var(--amber); }
   .layer.l2{ background: rgba(57,135,229,.09); } .layer.l2 .l-badge{ background: var(--blue); }
   .layer.l3{ background: rgba(144,133,233,.09); } .layer.l3 .l-badge{ background: var(--violet); }
-  .layer-connector{ text-align:center; color: var(--ink-3); font-size:0.6em; margin: -1px 0; }
-  .layer-connector i{ animation: pulse-arrow 1.6s infinite; display:inline-block; }
-  @keyframes pulse-arrow{ 0%,100%{ opacity:.35; transform:translateY(0);} 50%{ opacity:1; transform:translateY(2px);} }
+  .layer-connector{ text-align:center; color: var(--ink-3); font-size:0.58em; margin: -1px 0; }
+  .layer-connector i{ animation: pulseArrow 1.7s infinite; display:inline-block; }
+  @keyframes pulseArrow{ 0%,100%{ opacity:.3; transform:translateY(0);} 50%{ opacity:1; transform:translateY(2px);} }
 
-  /* ── reveal chrome overrides ──────────────────────── */
+  /* ── vicious-cycle diagram ─────────────────────── */
+  .loop-diagram{ position:relative; width:210px; height:210px; }
+  .loop-ring{ position:absolute; inset:12px; border-radius:50%; border:2px dashed rgba(224,160,58,.4); animation: spin 16s linear infinite; }
+  .loop-diagram:hover .loop-ring{ animation-play-state: paused; }
+  @keyframes spin{ to{ transform: rotate(360deg);} }
+  .loop-node{ position:absolute; width:66px; height:66px; border-radius:50%; background:var(--surface); border:1px solid var(--border); display:flex; flex-direction:column; align-items:center; justify-content:center; gap:2px; color:var(--amber); transition:transform .25s var(--ease-out-back); }
+  .loop-node:hover{ transform:scale(1.14); background:rgba(224,160,58,.16); }
+  .loop-node span{ font-size:9px; color:var(--ink-2); font-weight:600; }
+  .loop-node.ln1{ top:0; left:50%; margin-left:-33px; }
+  .loop-node.ln2{ bottom:12px; right:0; } .loop-node.ln3{ bottom:12px; left:0; }
+  .loop-center{ position:absolute; inset:0; display:flex; align-items:center; justify-content:center; font-family:var(--mono); font-size:10px; color:var(--ink-3); letter-spacing:.05em; }
+
+  /* ── reveal chrome ─────────────────────────────── */
   .reveal .progress{ height:3px; color: var(--blue); background: rgba(255,255,255,.06); }
   .reveal .progress span{ background: linear-gradient(90deg, var(--blue), var(--violet)); }
   .reveal .controls{ color: var(--ink-2); }
-  .reveal .controls button{ filter: none; }
   .reveal .slide-number{
-    font-family: var(--mono) !important; background: rgba(255,255,255,.06) !important;
-    border:1px solid var(--border); border-radius:8px; color: var(--ink-2) !important;
-    padding:4px 10px !important; right:auto !important; left:16px !important; bottom:16px !important;
+    font-family: var(--mono) !important; background: rgba(255,255,255,.06) !important; border:1px solid var(--border);
+    border-radius:8px; color: var(--ink-2) !important; padding:4px 10px !important;
+    right:auto !important; left:16px !important; bottom:16px !important;
+  }
+
+  /* ── content stagger on slide entry ────────────── */
+  @media (prefers-reduced-motion: no-preference){
+    .reveal .slides section.present > *{ opacity:0; animation: riseIn .6s var(--ease) forwards; }
+    .reveal .slides section.present > *:nth-child(1){ animation-delay:.05s; }
+    .reveal .slides section.present > *:nth-child(2){ animation-delay:.13s; }
+    .reveal .slides section.present > *:nth-child(3){ animation-delay:.21s; }
+    .reveal .slides section.present > *:nth-child(4){ animation-delay:.29s; }
+    .reveal .slides section.present > *:nth-child(5){ animation-delay:.37s; }
+    .reveal .slides section.present > *:nth-child(n+6){ animation-delay:.44s; }
+    @keyframes riseIn{ from{ opacity:0; transform: translateY(16px); } to{ opacity:1; transform: none; } }
+  }
+  @media (prefers-reduced-motion: reduce){
+    #bg-aurora, .loop-ring, .orbit-ring, .grad-text{ animation: none !important; }
+  }
+
+  /* ── responsive tuning (small screens) ─────────── */
+  @media (max-width: 640px){
+    .two-col{ flex-direction: column; }
+    .flip-grid{ flex-direction: column; }
+    .flip-card{ height:150px; }
+    .stat-row{ flex-wrap: wrap; }
+    .dash{ flex-direction: column; }
   }
 </style>
 </head>
 <body>
+<div id="bg-aurora"></div>
 <canvas id="bg-canvas"></canvas>
 <div id="cursor-glow"></div>
 
 <div class="reveal">
   <div class="slides">
 
-    <!-- 0. TITLE -->
-    <section class="title-slide">
+    <!-- 0 · TITLE -->
+    <section class="title-slide" data-transition="zoom">
       <div class="title-badge"><span class="dot"></span> SUSTAINABLE PRODUCTION · 반도체 공정 탐구</div>
       <h1>버려지는 것들이<br><span class="grad-text">다시 순환이 될 때</span></h1>
       <div class="title-divider"></div>
-      <p style="font-size:0.68em; color:var(--ink-2); max-width:520px;">지속가능한 생산과 발전 — 반도체 공정에서 새어 나가는 가스·용수·열·데이터를 붙잡는 여섯 가지 시도</p>
-      <p style="font-family:var(--mono); font-size:0.5em; color:var(--ink-3); margin-top:26px; letter-spacing:.04em;">01 GAS &nbsp;·&nbsp; 02 SCRUBBER &nbsp;·&nbsp; 03 WATER &nbsp;·&nbsp; 04 HEAT &nbsp;·&nbsp; 05 EMS &nbsp;·&nbsp; 06 PREDICTIVE</p>
+      <p class="lead" style="font-size:0.7em; color:var(--ink-2); max-width:540px;">지속가능한 생산과 발전 — 반도체 공정에서 새어 나가는 가스·용수·열·데이터를 붙잡는 여섯 가지 시도</p>
+      <p class="title-track"><b>01</b> GAS · <b>02</b> SCRUBBER · <b>03</b> WATER · <b>04</b> HEAT · <b>05</b> EMS · <b>06</b> PREDICTIVE</p>
     </section>
 
-    <!-- 1. 배경 -->
+    <!-- 1 · 배경 -->
     <section>
       <div class="chip"><i class="fa-solid fa-bolt"></i> SEC.00 · 문제의 시작</div>
-      <h2 class="section-title">생산이 늘수록, 버리는 것도 늘어난다</h2>
+      <h2 class="section-title">생산이 늘수록, <span class="accent">버리는 것</span>도 늘어난다</h2>
 
-      <p style="max-width:640px; margin-bottom:20px;">반도체 제조는 미세한 회로를 새기기 위해 특수 공정가스, 초순수, 고온 공정을 동시에 요구합니다. 이 세 가지는 각기 다른 방식으로 자원을 소모하고, 소모된 자원의 상당 부분은 회수되지 않은 채 공정 밖으로 빠져나갑니다.</p>
-
-      <div class="stat-row">
-        <div class="stat-tile"><span class="num" data-count="23500" data-suffix="배">0</span><span class="lbl">세정가스 SF6의 온난화지수<br>(CO2 대비)</span></div>
-        <div class="stat-tile tone-amber"><span class="num" data-count="3" data-suffix="가지">0</span><span class="lbl">동시에 소모되는 핵심 자원<br>가스 · 용수 · 열</span></div>
-        <div class="stat-tile tone-aqua"><span class="num-text">24H</span><span class="lbl">멈추지 않는 냉각 설비<br>— 식힐수록 또 전력을 쓴다</span></div>
-      </div>
-
-      <div class="loop-wrap" style="display:flex; justify-content:center; margin-top:8px;">
-        <div class="loop-diagram" id="loop1">
-          <div class="loop-ring"></div>
-          <div class="loop-node ln1"><i class="fa-solid fa-fire"></i><span>발열</span></div>
-          <div class="loop-node ln2"><i class="fa-solid fa-snowflake"></i><span>냉각</span></div>
-          <div class="loop-node ln3"><i class="fa-solid fa-plug-circle-bolt"></i><span>전력소모</span></div>
-          <div class="loop-center"><span>악순환</span></div>
+      <div class="two-col">
+        <div class="col-a">
+          <p class="lead" style="margin-bottom:18px;">반도체 제조는 미세한 회로를 새기기 위해 특수 공정가스, 초순수, 고온 공정을 동시에 요구합니다. 소모된 자원의 상당 부분은 회수되지 않은 채 공정 밖으로 빠져나갑니다.</p>
+          <div class="stat-row">
+            <div class="stat-tile"><span class="num" data-count="23500" data-suffix="배">0</span><span class="lbl">세정가스 SF6의<br>온난화지수 (CO₂ 대비)</span></div>
+            <div class="stat-tile tone-amber"><span class="num-text">24H</span><span class="lbl">멈추지 않는<br>냉각 설비</span></div>
+          </div>
+          <div class="loop-diagram" id="loop1" style="margin:6px auto 0;">
+            <div class="loop-ring"></div>
+            <div class="loop-node ln1"><i class="fa-solid fa-fire"></i><span>발열</span></div>
+            <div class="loop-node ln2"><i class="fa-solid fa-snowflake"></i><span>냉각</span></div>
+            <div class="loop-node ln3"><i class="fa-solid fa-plug-circle-bolt"></i><span>전력소모</span></div>
+            <div class="loop-center"><span>악순환</span></div>
+          </div>
+        </div>
+        <div class="col-b">
+          <div class="chart-frame">
+            <div class="cf-title"><i class="fa-solid fa-chart-pie"></i> 팹의 전력은 어디로 가는가</div>
+            <div class="chart-box" style="height:230px;"><canvas data-chart="problem"></canvas></div>
+            <div class="cf-note">개념 예시 — 공정장비 다음으로 냉각·공조가 큰 비중을 차지합니다.</div>
+          </div>
         </div>
       </div>
-      <style>
-        .loop-diagram{ position:relative; width:230px; height:230px; }
-        .loop-ring{ position:absolute; inset:14px; border-radius:50%; border:2px dashed rgba(217,153,46,.4); animation: spin 14s linear infinite; }
-        .loop-diagram:hover .loop-ring{ animation-play-state: paused; }
-        @keyframes spin{ to{ transform: rotate(360deg);} }
-        .loop-node{ position:absolute; width:70px; height:70px; border-radius:50%; background:var(--surface); border:1px solid var(--border); display:flex; flex-direction:column; align-items:center; justify-content:center; gap:2px; color:var(--amber); transition:transform .2s; }
-        .loop-node:hover{ transform:scale(1.12); background:rgba(217,153,46,.16); }
-        .loop-node span{ font-size:9px; color:var(--ink-2); font-weight:600; }
-        .loop-node.ln1{ top:0; left:50%; margin-left:-35px; }
-        .loop-node.ln2{ bottom:14px; right:0; }
-        .loop-node.ln3{ bottom:14px; left:0; }
-        .loop-center{ position:absolute; inset:0; display:flex; align-items:center; justify-content:center; font-family:var(--mono); font-size:11px; color:var(--ink-3); letter-spacing:.05em; }
-      </style>
     </section>
 
-    <!-- 2. 오늘의 지도 (orbit) -->
+    <!-- 2 · 지도 -->
     <section>
       <div class="chip"><i class="fa-solid fa-diagram-project"></i> OVERVIEW · 오늘의 지도</div>
-      <h2 class="section-title">여섯 개의 기술, 두 개의 층</h2>
-      <p class="orbit-hint">카드를 클릭하면 가운데 설명이 바뀝니다 →</p>
-
+      <h2 class="section-title">여섯 개의 기술, <span class="accent">두 개의 층</span></h2>
+      <p class="hint">카드를 클릭하면 가운데 설명이 바뀝니다 →</p>
       <div class="orbit-wrap">
         <div class="orbit-ring"></div>
         <div class="orbit-node n1" data-i="1"><span class="n">01</span><span class="t">대체 공정가스</span></div>
@@ -352,98 +368,128 @@
       </div>
     </section>
 
-    <!-- 3. 자원순환 3종 tabs -->
+    <!-- 3 · 01 대체 공정가스 -->
     <section>
-      <div class="chip aqua"><i class="fa-solid fa-recycle"></i> SEC.01–03 · 자원 순환</div>
-      <h2 class="section-title">쓰는 양과 버리는 양을 줄이는 세 가지</h2>
-
-      <div class="tabs">
-        <div class="tab-btn active" data-tab="t1">01 대체 공정가스</div>
-        <div class="tab-btn" data-tab="t2">02 통합 스크러버</div>
-        <div class="tab-btn" data-tab="t3">03 초순수 재활용</div>
-      </div>
-
-      <div class="tab-panel active" id="t1">
-        <p style="margin-bottom:16px;">세정·식각에 쓰이는 SF6·NF3 계열 가스는 온난화지수가 극단적으로 높습니다. 같은 공정을 저GWP 대체가스나 원격 플라즈마 세정 방식으로 바꾸면, 처리 기술이 아니라 <strong>배출량 자체</strong>가 줄어듭니다.</p>
-        <div class="bar-row"><div class="bar-lbl"><span>기존 세정가스 (SF6 계열)</span><span class="val">GWP 23,500</span></div><div class="bar-track"><div class="bar-fill c-warn" data-w="96"></div></div></div>
-        <div class="bar-row"><div class="bar-lbl"><span>저GWP 대체 공정가스</span><span class="val">대폭 절감</span></div><div class="bar-track"><div class="bar-fill c-good" data-w="8"></div></div></div>
-      </div>
-
-      <div class="tab-panel" id="t2">
-        <p style="margin-bottom:16px;">설비마다 흩어져 있던 배가스 처리 장치를 하나의 라인으로 묶고, 연소식과 습식 처리를 결합하면 유해가스 제거율과 에너지 효율이 함께 오릅니다.</p>
-        <div class="bar-row"><div class="bar-lbl"><span>개별 처리 방식</span><span class="val">약 70%</span></div><div class="bar-track"><div class="bar-fill c-warn" data-w="70"></div></div></div>
-        <div class="bar-row"><div class="bar-lbl"><span>통합 고도화 방식</span><span class="val">약 95% (예시)</span></div><div class="bar-track"><div class="bar-fill c-good" data-w="95"></div></div></div>
-      </div>
-
-      <div class="tab-panel" id="t3">
-        <p style="margin-bottom:16px;">세정에 쓰인 물 중 오염도가 낮은 것을 골라 역삼투·자외선·이온교환 등 다단계로 정제하면 다시 공정에 투입할 수 있습니다. 용수 사용량과 폐수 발생이 함께 줄어듭니다.</p>
-        <div class="bar-row"><div class="bar-lbl"><span>재사용으로 전환되는 용수 비율</span><span class="val">목표 예시 40%</span></div><div class="bar-track"><div class="bar-fill c-aqua" data-w="40"></div></div></div>
+      <div class="chip aqua"><i class="fa-solid fa-wind"></i> SEC.01 · 대체 공정가스 도입</div>
+      <h2 class="section-title">배출을 <span class="accent">처리</span>하지 말고, 애초에 <span class="accent">덜 만든다</span></h2>
+      <div class="two-col">
+        <div class="col-a">
+          <ul class="ppt-list">
+            <li><div class="icon aqua"><i class="fa-solid fa-triangle-exclamation"></i></div><div class="body"><strong>문제 — 극단적으로 높은 온난화지수</strong><span>세정·식각에 쓰이는 SF6·NF3 계열 가스는 같은 무게의 CO₂보다 수천~수만 배 강한 온실효과를 냅니다.</span></div></li>
+            <li><div class="icon aqua"><i class="fa-solid fa-arrows-rotate"></i></div><div class="body"><strong>해법 — 저GWP 대체가스 · 원격 플라즈마</strong><span>가스를 저GWP 물질로 바꾸거나, 챔버 밖에서 플라즈마로 분해해 투입하면 배출량 자체가 줄어듭니다.</span></div></li>
+            <li><div class="icon aqua"><i class="fa-solid fa-bullseye"></i></div><div class="body"><strong>핵심 — 사후 처리가 아닌 원천 저감</strong><span>스크러버로 걷어내는 양을 줄여, 뒤따르는 처리 설비의 부담까지 함께 낮춥니다.</span></div></li>
+          </ul>
+        </div>
+        <div class="col-b">
+          <div class="chart-frame">
+            <div class="cf-title"><i class="fa-solid fa-temperature-arrow-up"></i> 세정가스별 온난화지수(GWP)</div>
+            <div class="chart-box" style="height:236px;"><canvas data-chart="gas"></canvas></div>
+            <div class="cf-note">GWP-100 기준 대략값 · 대체가스는 방식에 따라 큰 폭으로 낮아짐</div>
+          </div>
+        </div>
       </div>
     </section>
 
-    <!-- 4. 폐열회수 배경 -->
+    <!-- 4 · 02 통합 스크러버 -->
+    <section>
+      <div class="chip aqua"><i class="fa-solid fa-filter"></i> SEC.02 · 통합 스크러버 고도화</div>
+      <h2 class="section-title">흩어진 처리 장치를 <span class="accent">하나의 라인</span>으로</h2>
+      <div class="two-col">
+        <div class="col-a">
+          <ul class="ppt-list">
+            <li><div class="icon aqua"><i class="fa-solid fa-diagram-successor"></i></div><div class="body"><strong>통합</strong><span>설비마다 따로 있던 배가스 처리 장치를 묶어, 공간과 유지보수 부담을 줄입니다.</span></div></li>
+            <li><div class="icon aqua"><i class="fa-solid fa-fire-flame-simple"></i></div><div class="body"><strong>연소식 + 습식 결합</strong><span>태워서 분해하고 물로 씻어내는 두 방식을 이어 붙여, 넓은 종류의 유해가스를 함께 걷어냅니다.</span></div></li>
+            <li><div class="icon aqua"><i class="fa-solid fa-gauge-high"></i></div><div class="body"><strong>제거율과 에너지효율을 동시에</strong><span>통합 제어로 연료·용수 사용을 최적화하며 처리 성능을 끌어올립니다.</span></div></li>
+          </ul>
+          <div class="highlight aqua"><p><i class="fa-solid fa-arrow-right-long" style="margin-right:6px;"></i>1번(원천 저감)과 짝을 이룹니다 — 덜 만들고, 남은 것은 더 잘 걷어냅니다.</p></div>
+        </div>
+        <div class="col-b">
+          <div class="chart-frame">
+            <div class="cf-title"><i class="fa-solid fa-chart-area"></i> 개별 처리 vs 통합 고도화</div>
+            <div class="chart-box" style="height:246px;"><canvas data-chart="scrubber"></canvas></div>
+            <div class="cf-note">개념 비교(예시) — 다섯 항목을 상대 점수로 표현</div>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <!-- 5 · 03 초순수 재활용 -->
+    <section>
+      <div class="chip aqua"><i class="fa-solid fa-droplet"></i> SEC.03 · 초순수 재활용</div>
+      <h2 class="section-title">한 번 쓴 물을 <span class="accent">다시 공정으로</span></h2>
+      <div class="two-col">
+        <div class="col-a">
+          <ul class="ppt-list">
+            <li><div class="icon aqua"><i class="fa-solid fa-layer-group"></i></div><div class="body"><strong>선별 — 오염도로 나눈다</strong><span>세정에 쓰인 물 중 상대적으로 깨끗한 것을 골라 재생 대상으로 삼습니다.</span></div></li>
+            <li><div class="icon aqua"><i class="fa-solid fa-filter-circle-xmark"></i></div><div class="body"><strong>다단계 정제</strong><span>역삼투 · 자외선 · 이온교환을 거쳐 초순수 수준으로 되돌립니다.</span></div></li>
+            <li><div class="icon aqua"><i class="fa-solid fa-recycle"></i></div><div class="body"><strong>이중 효과 — 용수↓ 폐수↓</strong><span>새로 끌어오는 물과 밖으로 내보내는 폐수를 동시에 줄입니다.</span></div></li>
+          </ul>
+        </div>
+        <div class="col-b">
+          <div class="chart-frame">
+            <div class="cf-title"><i class="fa-solid fa-chart-pie"></i> 사용 후 물의 행선지</div>
+            <div class="chart-box" style="height:212px;"><canvas data-chart="water"></canvas></div>
+            <div class="cf-note">개념 예시 — 재사용 전환 비율이 높을수록 신규 취수·폐수가 줄어듦</div>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <!-- 6 · 04 폐열 배경 -->
     <section>
       <div class="chip amber"><i class="fa-solid fa-fire-flame-curved"></i> SEC.04 · 폐열 회수 — 배경</div>
-      <h2 class="section-title">열은 왜 계속 새어 나가는가</h2>
-
+      <h2 class="section-title">열은 왜 계속 <span class="accent">새어 나가는가</span></h2>
       <div class="two-col">
         <div class="col-a">
           <ul class="ppt-list">
             <li><div class="icon amber"><i class="fa-solid fa-fire"></i></div><div class="body"><strong>고온 공정 + 상시 냉각</strong><span>산화·확산·식각 같은 고온 공정과, 이를 식히는 냉각 설비가 24시간 함께 돌아갑니다.</span></div></li>
-            <li><div class="icon amber"><i class="fa-solid fa-repeat"></i></div><div class="body"><strong>냉각이 또 다른 전력 소비를 부른다</strong><span>열을 빼내려고 칠러가 돌수록 전력 사용량이 늘고, 그만큼 다시 열이 발생하는 흐름이 반복됩니다.</span></div></li>
+            <li><div class="icon amber"><i class="fa-solid fa-repeat"></i></div><div class="body"><strong>냉각이 또 다른 전력 소비를 부른다</strong><span>열을 빼내려고 칠러가 돌수록 전력이 늘고, 그만큼 다시 열이 발생하는 흐름이 반복됩니다.</span></div></li>
             <li><div class="icon amber"><i class="fa-solid fa-trash"></i></div><div class="body"><strong>정작 열은 그대로 버려진다</strong><span>비용을 들여 빼낸 열의 대부분은 그대로 대기 중으로 방출됩니다.</span></div></li>
           </ul>
-          <div class="highlight amber"><p><i class="fa-solid fa-quote-left" style="margin-right:6px;"></i>버려지는 폐열을 모으고 재활용하면 에너지 비용을 절감하고 탄소 배출도 함께 줄일 수 있습니다.</p></div>
         </div>
         <div class="col-b">
-          <img src="https://commons.wikimedia.org/wiki/Special:FilePath/Silicon_wafer.jpg?width=700" alt="반도체 웨이퍼">
-          <div class="img-cap">SILICON WAFER — 고온 공정이 시작되는 지점</div>
+          <div class="chart-frame">
+            <div class="cf-title"><i class="fa-solid fa-gauge-simple-high"></i> 뽑아낸 열, 얼마나 다시 쓰나</div>
+            <div class="chart-box" style="height:210px;"><canvas data-chart="heatWaste"></canvas></div>
+            <div class="cf-note">개념 예시 — 회수 없이는 대부분 폐기, 회수하면 상당량 재사용</div>
+          </div>
+          <div class="highlight amber" style="margin-top:12px;"><p><i class="fa-solid fa-quote-left" style="margin-right:6px;"></i>버려지는 폐열을 모아 재활용하면 에너지 비용과 탄소 배출을 함께 줄일 수 있습니다.</p></div>
         </div>
       </div>
     </section>
 
-    <!-- 5. 폐열회수 기술 (flip cards) -->
+    <!-- 7 · 04 폐열 방법 -->
     <section>
       <div class="chip amber"><i class="fa-solid fa-fire-flame-curved"></i> SEC.04 · 폐열 회수 — 방법</div>
-      <h2 class="section-title">열을 붙잡는 세 가지 방식</h2>
-      <p class="orbit-hint" style="margin-bottom:16px;">카드를 클릭하면 뒤집혀 상세 설명이 나타납니다</p>
-
+      <h2 class="section-title">열을 붙잡는 <span class="accent">세 가지 방식</span></h2>
+      <p class="hint" style="margin-bottom:14px;">카드를 클릭하면 뒤집혀 상세 설명이 나타납니다</p>
       <div class="flip-grid">
-        <div class="flip-card">
-          <div class="flip-inner">
-            <div class="flip-face flip-front"><div class="ico"><i class="fa-solid fa-water"></i></div><strong>냉각수 회수</strong><span class="hint">CLICK</span></div>
-            <div class="flip-face flip-back"><p>설비를 식힌 냉각수가 품은 열을 열교환기로 빼내 공장 난방과 온수 공급에 그대로 활용합니다.</p></div>
-          </div>
-        </div>
-        <div class="flip-card">
-          <div class="flip-inner">
-            <div class="flip-face flip-front"><div class="ico"><i class="fa-solid fa-wind"></i></div><strong>배기 회수</strong><span class="hint">CLICK</span></div>
-            <div class="flip-face flip-back"><p>배출되는 뜨거운 배기 공기의 열로, 외부에서 들어오는 찬 공기를 미리 데워 급기 부하를 줄입니다.</p></div>
-          </div>
-        </div>
-        <div class="flip-card">
-          <div class="flip-inner">
-            <div class="flip-face flip-front"><div class="ico"><i class="fa-solid fa-gauge"></i></div><strong>폐열 발전</strong><span class="hint">CLICK</span></div>
-            <div class="flip-face flip-back"><p>충분히 고온인 폐열로 유기랭킨사이클(ORC) 터빈을 돌려, 열을 아예 전기로 바꿔 다시 사용합니다.</p></div>
-          </div>
-        </div>
+        <div class="flip-card"><div class="flip-inner">
+          <div class="flip-face flip-front"><div class="ico"><i class="fa-solid fa-water"></i></div><strong>냉각수 회수</strong><span class="badge">LOW TEMP</span></div>
+          <div class="flip-face flip-back"><p>설비를 식힌 냉각수가 품은 열을 열교환기로 빼내 공장 난방과 온수 공급에 그대로 활용합니다.</p></div>
+        </div></div>
+        <div class="flip-card"><div class="flip-inner">
+          <div class="flip-face flip-front"><div class="ico"><i class="fa-solid fa-wind"></i></div><strong>배기 회수</strong><span class="badge">MID TEMP</span></div>
+          <div class="flip-face flip-back"><p>배출되는 뜨거운 공기의 열로 외부에서 들어오는 찬 공기를 미리 데워 급기 부하를 줄입니다.</p></div>
+        </div></div>
+        <div class="flip-card"><div class="flip-inner">
+          <div class="flip-face flip-front"><div class="ico"><i class="fa-solid fa-bolt-lightning"></i></div><strong>폐열 발전</strong><span class="badge">HIGH TEMP</span></div>
+          <div class="flip-face flip-back"><p>고온 폐열로 유기랭킨사이클(ORC) 터빈을 돌려 열을 아예 전기로 바꿔 다시 씁니다.</p></div>
+        </div></div>
       </div>
-
-      <div class="highlight amber" style="margin-top:20px;"><p><i class="fa-solid fa-arrow-down-up-across-line" style="margin-right:6px;"></i>온도가 높을수록 발전으로, 낮을수록 난방·예열로 — 열의 온도 수준에 맞춰 활용 방식을 다르게 조합하는 것이 핵심입니다.</p></div>
+      <div class="highlight amber" style="margin-top:18px;"><p><i class="fa-solid fa-arrow-down-up-across-line" style="margin-right:6px;"></i>온도가 높을수록 발전으로, 낮을수록 난방·예열로 — 열의 온도 수준에 맞춰 활용 방식을 조합하는 것이 핵심입니다.</p></div>
     </section>
 
-    <!-- 6. 폐열회수 효과 -->
+    <!-- 8 · 04 폐열 효과 -->
     <section>
       <div class="chip amber"><i class="fa-solid fa-fire-flame-curved"></i> SEC.04 · 폐열 회수 — 기대 효과</div>
-      <h2 class="section-title">공장 담장 안팎으로 퍼지는 효과</h2>
-
+      <h2 class="section-title">공장 담장 <span class="accent">안팎</span>으로 퍼지는 효과</h2>
       <div class="two-col">
         <div class="col-a">
           <ul class="ppt-list">
-            <li><div class="icon amber"><i class="fa-solid fa-leaf"></i></div><div class="body"><strong>ESG 경영의 실질적 수단</strong><span>선언에 그치지 않고 실제 배출량과 전력 사용량을 줄이는, 탄소중립·RE100 실행 항목이 됩니다.</span></div></li>
-            <li><div class="icon amber"><i class="fa-solid fa-people-roof"></i></div><div class="body"><strong>지역 상생으로 확장</strong><span>회수한 열을 인근 아파트나 시설에 지역난방으로 공급하는 사례로 이어집니다.</span></div></li>
+            <li><div class="icon amber"><i class="fa-solid fa-leaf"></i></div><div class="body"><strong>ESG 경영의 실질적 수단</strong><span>선언에 그치지 않고 실제 배출량·전력 사용량을 줄이는 탄소중립·RE100 실행 항목이 됩니다.</span></div></li>
+            <li><div class="icon amber"><i class="fa-solid fa-people-roof"></i></div><div class="body"><strong>지역 상생으로 확장</strong><span>회수한 열을 인근 아파트·시설에 지역난방으로 공급하는 사례로 이어집니다.</span></div></li>
           </ul>
-
           <div class="toggle-row">
             <label class="switch"><input type="checkbox" id="reachToggle"><span class="slider-tgl"></span></label>
             <span class="toggle-label" id="reachLabel">공장 내부 활용만</span>
@@ -455,88 +501,77 @@
           </div>
         </div>
         <div class="col-b">
-          <img src="https://commons.wikimedia.org/wiki/Special:FilePath/District_heating_pipes.JPG?width=700" alt="지역난방 배관">
-          <div class="img-cap">DISTRICT HEATING — 회수한 열이 이동하는 실제 배관</div>
-          <div class="highlight" style="margin-top:14px;"><p><i class="fa-solid fa-info-circle" style="margin-right:6px;"></i>다만 모은 열을 <strong>언제, 어디에 얼마나</strong> 보낼지 결정하는 시스템이 없다면 효과는 절반만 남습니다 — 그래서 EMS가 필요합니다.</p></div>
+          <div class="chart-frame">
+            <div class="cf-title"><i class="fa-solid fa-chart-column"></i> 회수 전 vs 후 (개념 지수)</div>
+            <div class="chart-box" style="height:212px;"><canvas data-chart="heatEffect"></canvas></div>
+            <div class="cf-note">기준 100 대비 상대 지수(예시) — 값이 낮을수록 좋음</div>
+          </div>
+          <div class="highlight" style="margin-top:12px;"><p><i class="fa-solid fa-info-circle" style="margin-right:6px;"></i>단, 모은 열을 <strong>언제·어디에·얼마나</strong> 보낼지 결정하는 시스템이 없으면 효과는 절반만 남습니다.</p></div>
         </div>
       </div>
     </section>
 
-    <!-- 7. EMS 개념 -->
+    <!-- 9 · 05 EMS 개념 -->
     <section>
-      <div class="chip"><i class="fa-solid fa-gauge-high"></i> SEC.05 · EMS</div>
-      <h2 class="section-title">모은 열을 어디로 보낼지 결정하는 두뇌</h2>
-
+      <div class="chip"><i class="fa-solid fa-gauge-high"></i> SEC.05 · EMS 에너지관리시스템</div>
+      <h2 class="section-title">모은 열을 어디로 보낼지 결정하는 <span class="accent">두뇌</span></h2>
       <div class="two-col">
         <div class="col-a">
-          <p style="margin-bottom:14px;">폐열회수 설비가 열을 잘 모아도, 이 순간 어느 라인에 보낼지 판단하는 장치가 없다면 남는 열은 그냥 흘려보내게 됩니다. <strong>EMS(에너지관리시스템)</strong>는 생산설비·공조·조명·폐열배관 등 모든 에너지 사용처의 데이터를 실시간으로 모으고 분석하고 제어하는 통합 플랫폼입니다.</p>
-          <p class="orbit-hint">단계를 클릭하면 상세 설명이 펼쳐집니다</p>
-          <div class="flow-v" id="emsFlow">
+          <p style="margin-bottom:14px;">폐열회수 설비가 열을 잘 모아도, 지금 이 순간 어느 라인에 보낼지 판단하는 장치가 없다면 남는 열은 그냥 흘려보내게 됩니다. <strong>EMS</strong>는 생산설비·공조·조명·폐열배관 등 모든 에너지 사용처의 데이터를 실시간으로 모으고 분석하고 제어하는 통합 플랫폼입니다.</p>
+          <div class="highlight"><p><i class="fa-solid fa-lightbulb" style="margin-right:6px;"></i>4번이 <strong>열을 모으는 배관</strong>이라면, EMS는 그 배관의 <strong>밸브를 실시간으로 여닫는 관제탑</strong>입니다.</p></div>
+        </div>
+        <div class="col-b">
+          <p class="hint">단계를 클릭하면 상세 설명이 펼쳐집니다</p>
+          <div id="emsFlow">
             <div class="flow-v-step open"><div class="flow-v-head"><span class="idx">01</span><strong>계측 · 센서</strong><i class="fa-solid fa-chevron-down chevron"></i></div><div class="flow-v-body"><p>배관 온도, 설비별 전력량을 실시간으로 수집합니다.</p></div></div>
             <div class="flow-v-step"><div class="flow-v-head"><span class="idx">02</span><strong>데이터 통합 (IoT/SCADA)</strong><i class="fa-solid fa-chevron-down chevron"></i></div><div class="flow-v-body"><p>흩어진 신호를 하나의 데이터베이스로 모읍니다.</p></div></div>
             <div class="flow-v-step"><div class="flow-v-head"><span class="idx">03</span><strong>분석 · 최적화</strong><i class="fa-solid fa-chevron-down chevron"></i></div><div class="flow-v-body"><p>어디로 열과 전력을 보낼지 알고리즘이 계산합니다.</p></div></div>
             <div class="flow-v-step"><div class="flow-v-head"><span class="idx">04</span><strong>자동 제어</strong><i class="fa-solid fa-chevron-down chevron"></i></div><div class="flow-v-body"><p>밸브와 부하를 사람 개입 없이 즉시 조정합니다.</p></div></div>
           </div>
         </div>
-        <div class="col-b">
-          <img src="https://commons.wikimedia.org/wiki/Special:FilePath/Fully_automated_control_room.jpg?width=700" alt="자동화 관제실">
-          <div class="img-cap">CONTROL ROOM — 실시간 관제가 이뤄지는 곳</div>
-        </div>
       </div>
     </section>
 
-    <!-- 8. EMS 데모 -->
+    <!-- 10 · 05 EMS 대시보드 -->
     <section>
-      <div class="chip"><i class="fa-solid fa-gauge-high"></i> SEC.05 · EMS 실시간 관제 (개념 데모)</div>
-      <h2 class="section-title"><span class="live-dot"></span>EMS가 있을 때, 화면은 이렇게 움직입니다</h2>
-
+      <div class="chip"><i class="fa-solid fa-gauge-high"></i> SEC.05 · 실시간 관제 (개념 데모)</div>
+      <h2 class="section-title"><span class="live-dot"></span>EMS가 있을 때, 화면은 이렇게 움직인다</h2>
       <div class="dash card">
         <div class="gauge-wrap">
-          <svg width="150" height="150" viewBox="0 0 150 150">
-            <circle cx="75" cy="75" r="62" stroke="rgba(255,255,255,.08)" stroke-width="12" fill="none"/>
-            <circle id="gaugeArc" cx="75" cy="75" r="62" stroke="url(#gaugeGrad)" stroke-width="12" fill="none" stroke-linecap="round" stroke-dasharray="389.6" stroke-dashoffset="389.6"/>
+          <svg width="148" height="148" viewBox="0 0 148 148">
+            <circle cx="74" cy="74" r="61" stroke="rgba(255,255,255,.08)" stroke-width="12" fill="none"/>
+            <circle id="gaugeArc" cx="74" cy="74" r="61" stroke="url(#gaugeGrad)" stroke-width="12" fill="none" stroke-linecap="round" stroke-dasharray="383.3" stroke-dashoffset="383.3"/>
             <defs><linearGradient id="gaugeGrad" x1="0" y1="0" x2="1" y2="1"><stop offset="0%" stop-color="#3987e5"/><stop offset="100%" stop-color="#23b381"/></linearGradient></defs>
           </svg>
           <div class="gauge-val"><span class="n" id="gaugeNum">--</span><span class="u">폐열 회수 활용률</span></div>
         </div>
         <div class="dash-right">
-          <div class="spark-wrap"><svg id="sparkline" width="100%" height="52" viewBox="0 0 320 52" preserveAspectRatio="none"><polyline id="sparkPoly" points="" fill="none" stroke="#3987e5" stroke-width="2"/></svg></div>
+          <div class="chart-box" style="height:120px;"><canvas data-chart="emsLive"></canvas></div>
           <div class="dash-readout">
-            <div class="readout-tile"><span class="n" id="rPeak">--</span><span class="l">현재 배관 온도(℃)</span></div>
-            <div class="readout-tile"><span class="n" id="rLoad">--</span><span class="l">부하 분산 라인 수</span></div>
-            <div class="readout-tile"><span class="n" id="rSave">--</span><span class="l">추정 절감 전력(kW)</span></div>
+            <div class="readout-tile"><span class="n" id="rPeak">--</span><span class="l">배관 온도(℃)</span></div>
+            <div class="readout-tile"><span class="n" id="rLoad">--</span><span class="l">부하 분산 라인</span></div>
+            <div class="readout-tile"><span class="n" id="rSave">--</span><span class="l">추정 절감(kW)</span></div>
           </div>
         </div>
       </div>
-
-      <div class="highlight" style="margin-top:18px;"><p><i class="fa-solid fa-circle-info" style="margin-right:6px;"></i>실제 수치가 아닌 <strong>작동 개념을 보여주는 시뮬레이션</strong>입니다. EMS는 이렇게 배관 온도와 부하를 계속 지켜보며 밸브를 조정합니다.</p></div>
+      <div class="highlight" style="margin-top:16px;"><p><i class="fa-solid fa-circle-info" style="margin-right:6px;"></i>실제 수치가 아닌 <strong>작동 개념 시뮬레이션</strong>입니다. EMS는 이렇게 배관 온도와 부하를 지켜보며 밸브를 조정합니다.</p></div>
     </section>
 
-    <!-- 9. 예측기반 개념 -->
+    <!-- 11 · 06 예측 개념 -->
     <section>
       <div class="chip violet"><i class="fa-solid fa-chart-line"></i> SEC.06 · 예측 기반 수요-생산 연동</div>
-      <h2 class="section-title">생산 계획이 바뀌면 에너지도 같이 흔들린다</h2>
-
-      <div class="two-col">
-        <div class="col-a">
-          <ul class="ppt-list">
-            <li><div class="icon violet"><i class="fa-solid fa-arrows-spin"></i></div><div class="body"><strong>수시로 바뀌는 생산 스케줄</strong><span>생산량은 시장 수요와 장비 가동률에 따라 자주 조정되고, 그때마다 전력·냉각 수요도 함께 출렁입니다.</span></div></li>
-            <li><div class="icon violet"><i class="fa-solid fa-clock"></i></div><div class="body"><strong>EMS는 "이미 벌어진 일"에 대응할 뿐</strong><span>실시간 제어는 변화가 일어난 다음에 반응하는 방식이라, 생산이 갑자기 몰리는 순간의 비효율까지는 막기 어렵습니다.</span></div></li>
-            <li><div class="icon violet"><i class="fa-solid fa-magnifying-glass-chart"></i></div><div class="body"><strong>그래서 "미리 안다"가 필요하다</strong><span>수요 예측 기반 생산계획(APS)과 EMS를 연동해 생산이 몰릴 시간대를 미리 계산하고, 배분을 사전 조정합니다.</span></div></li>
-          </ul>
-        </div>
-        <div class="col-b">
-          <img src="https://commons.wikimedia.org/wiki/Special:FilePath/Datacenter_Rack.jpg?width=700" alt="서버랙">
-          <div class="img-cap">DATA PIPELINE — 예측 모델이 돌아가는 곳</div>
-        </div>
-      </div>
+      <h2 class="section-title">생산 계획이 바뀌면 <span class="accent">에너지도 흔들린다</span></h2>
+      <ul class="ppt-list">
+        <li><div class="icon violet"><i class="fa-solid fa-arrows-spin"></i></div><div class="body"><strong>수시로 바뀌는 생산 스케줄</strong><span>생산량은 시장 수요와 장비 가동률에 따라 자주 조정되고, 그때마다 전력·냉각 수요도 함께 출렁입니다.</span></div></li>
+        <li><div class="icon violet"><i class="fa-solid fa-clock-rotate-left"></i></div><div class="body"><strong>EMS는 "이미 벌어진 일"에 대응할 뿐</strong><span>실시간 제어는 변화가 일어난 다음 반응하는 방식이라, 생산이 갑자기 몰리는 순간의 비효율까지는 막기 어렵습니다.</span></div></li>
+        <li><div class="icon violet"><i class="fa-solid fa-crystal-ball"></i></div><div class="body"><strong>그래서 "미리 안다"가 필요하다</strong><span>수요 예측 기반 생산계획(APS)과 EMS를 연동해 생산이 몰릴 시간대를 미리 계산하고 배분을 사전 조정합니다.</span></div></li>
+      </ul>
     </section>
 
-    <!-- 10. 예측기반 구조 + 효과 -->
+    <!-- 12 · 06 예측 구조 + 차트 -->
     <section>
       <div class="chip violet"><i class="fa-solid fa-chart-line"></i> SEC.06 · 작동 구조와 효과</div>
-      <h2 class="section-title">예측이 설비를 미리 움직이기까지</h2>
-
+      <h2 class="section-title">예측이 설비를 <span class="accent">미리 움직이기</span>까지</h2>
       <div class="flow-h" id="predFlow">
         <div class="flow-h-node active" data-d="시계열 데이터로 향후 생산 물량을 미리 계산합니다."><div class="ico"><i class="fa-solid fa-magnifying-glass-chart"></i></div><strong>수요 예측</strong></div>
         <div class="flow-h-connector"><i class="fa-solid fa-arrow-right"></i></div>
@@ -547,26 +582,17 @@
         <div class="flow-h-node" data-d="부하가 몰릴 시간대의 냉각·회수 설비를 미리 조정합니다."><div class="ico"><i class="fa-solid fa-sliders"></i></div><strong>EMS 사전 조정</strong></div>
       </div>
       <div class="flow-h-detail card"><p id="predDetail" style="color:var(--ink-2);">시계열 데이터로 향후 생산 물량을 미리 계산합니다.</p></div>
-
-      <div class="chart-legend" style="margin-top:18px;">
-        <div class="item"><span class="sw" style="background:var(--warn);"></span>예측 없이 대응</div>
-        <div class="item"><span class="sw" style="background:var(--good);"></span>예측 기반 사전 조정</div>
+      <div class="chart-frame" style="margin-top:14px;">
+        <div class="cf-title"><i class="fa-solid fa-wave-square"></i> 하루 전력 부하 — 예측 없음 vs 예측 기반</div>
+        <div class="chart-box" style="height:180px;"><canvas data-chart="predict"></canvas></div>
+        <div class="cf-note">개념도(예시) — 예측 기반 사전 조정이 전력 피크를 완만하게 만듭니다</div>
       </div>
-      <div class="linechart-wrap">
-        <svg id="predChart" width="100%" height="150" viewBox="0 0 600 150" preserveAspectRatio="none">
-          <line x1="0" y1="120" x2="600" y2="120" stroke="rgba(255,255,255,.12)"/>
-          <path id="lineBefore" d="M10,90 C110,20 170,10 260,40 C330,64 380,110 590,100" fill="none" stroke="var(--warn)" stroke-width="2.5"/>
-          <path id="lineAfter" d="M10,95 C150,80 250,70 320,68 C420,66 500,72 590,78" fill="none" stroke="var(--good)" stroke-width="2.5"/>
-        </svg>
-      </div>
-      <p style="font-size:0.6em; margin-top:8px; color:var(--ink-3);">※ 개념도(예시) — 예측 기반 사전 조정이 전력 피크를 완만하게 만드는 원리를 보여줍니다.</p>
     </section>
 
-    <!-- 11. 종합 -->
+    <!-- 13 · 종합 -->
     <section>
       <div class="chip"><i class="fa-solid fa-diagram-project"></i> 종합</div>
-      <h2 class="section-title">셋이 겹쳐야 완성되는 하나의 순환</h2>
-
+      <h2 class="section-title">셋이 겹쳐야 완성되는 <span class="accent">하나의 순환</span></h2>
       <div class="layer-stack">
         <div class="layer l1"><div class="l-badge"><i class="fa-solid fa-fire-flame-curved"></i></div><div class="l-body"><strong>하드웨어 · 폐열 회수 시스템</strong><span>냉각수·배기·고온 폐열에서 실제로 에너지를 붙잡아내는 물리적 설비</span></div></div>
         <div class="layer-connector"><i class="fa-solid fa-angle-up"></i><i class="fa-solid fa-angle-down"></i></div>
@@ -574,13 +600,12 @@
         <div class="layer-connector"><i class="fa-solid fa-angle-up"></i><i class="fa-solid fa-angle-down"></i></div>
         <div class="layer l3"><div class="l-badge"><i class="fa-solid fa-chart-line"></i></div><div class="l-body"><strong>지능 · 예측 기반 수요-생산 연동</strong><span>앞으로의 생산 흐름을 미리 읽어 EMS의 판단 시점을 당겨줌</span></div></div>
       </div>
-
-      <div class="highlight" style="margin-top:20px;"><p><i class="fa-solid fa-quote-left" style="margin-right:6px;"></i>설비만 있으면 열이 새고, 관제만 있으면 대응이 늦고, 예측만 있으면 실행할 수단이 없습니다. 세 층이 함께 맞물릴 때 지속가능한 생산에 가까워집니다.</p></div>
+      <div class="highlight" style="margin-top:18px;"><p><i class="fa-solid fa-quote-left" style="margin-right:6px;"></i>설비만 있으면 열이 새고, 관제만 있으면 대응이 늦고, 예측만 있으면 실행할 수단이 없습니다. 세 층이 맞물릴 때 지속가능한 생산에 가까워집니다.</p></div>
     </section>
 
-    <!-- 12. 마무리 -->
-    <section class="end-slide">
-      <div style="text-align:center; padding: 10px 0;">
+    <!-- 14 · 마무리 -->
+    <section class="end-slide" data-transition="zoom">
+      <div>
         <h1>지속가능한 생산은<br><span class="grad-text">이미 있는 것을 다시 보는 일</span></h1>
         <div class="title-divider" style="margin:22px auto;"></div>
         <p style="font-size:0.7em; color:var(--ink-2); max-width:480px; margin:0 auto;">버려지던 가스ㆍ물ㆍ열ㆍ데이터를 순환의 자원으로 — 감사합니다.</p>
@@ -591,102 +616,66 @@
 </div>
 
 <script src="https://cdnjs.cloudflare.com/ajax/libs/reveal.js/4.3.1/reveal.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/Chart.js/4.4.1/chart.umd.min.js"></script>
 <script>
-  /* ---------- background circuit canvas ---------- */
+(function(){
+  'use strict';
+  var reduceMotion = window.matchMedia && window.matchMedia('(prefers-reduced-motion: reduce)').matches;
+
+  /* ============ ambient particle network ============ */
   (function(){
-    var canvas = document.getElementById('bg-canvas');
-    var ctx = canvas.getContext('2d');
-    var W, H, pts = [];
-    var COLORS = ['57,135,229', '35,179,129', '144,133,233'];
+    var canvas = document.getElementById('bg-canvas'), ctx = canvas.getContext('2d');
+    var W, H, DPR = Math.min(window.devicePixelRatio || 1, 2), pts = [];
+    var COLORS = ['57,135,229','35,179,129','144,133,233'];
     function resize(){
-      W = canvas.width = window.innerWidth;
-      H = canvas.height = window.innerHeight;
+      W = window.innerWidth; H = window.innerHeight;
+      canvas.width = W * DPR; canvas.height = H * DPR;
+      canvas.style.width = W + 'px'; canvas.style.height = H + 'px';
+      ctx.setTransform(DPR,0,0,DPR,0,0);
     }
     function init(){
-      resize();
-      pts = [];
-      var n = Math.min(60, Math.floor((W*H)/24000));
-      for(var i=0;i<n;i++){
-        pts.push({
-          x: Math.random()*W, y: Math.random()*H,
-          vx: (Math.random()-0.5)*0.25, vy: (Math.random()-0.5)*0.25,
-          c: COLORS[i % COLORS.length]
-        });
-      }
+      resize(); pts = [];
+      var n = Math.min(58, Math.floor((W*H)/26000));
+      for(var i=0;i<n;i++) pts.push({ x:Math.random()*W, y:Math.random()*H, vx:(Math.random()-.5)*.22, vy:(Math.random()-.5)*.22, c:COLORS[i%COLORS.length] });
     }
-    function step(){
+    function frame(){
       ctx.clearRect(0,0,W,H);
-      for(var i=0;i<pts.length;i++){
-        var p = pts[i];
-        p.x += p.vx; p.y += p.vy;
-        if(p.x<0||p.x>W) p.vx*=-1;
-        if(p.y<0||p.y>H) p.vy*=-1;
+      for(var i=0;i<pts.length;i++){ var p=pts[i]; p.x+=p.vx; p.y+=p.vy; if(p.x<0||p.x>W)p.vx*=-1; if(p.y<0||p.y>H)p.vy*=-1; }
+      for(var i=0;i<pts.length;i++) for(var j=i+1;j<pts.length;j++){
+        var a=pts[i],b=pts[j],dx=a.x-b.x,dy=a.y-b.y,d=Math.sqrt(dx*dx+dy*dy);
+        if(d<140){ ctx.strokeStyle='rgba('+a.c+','+(0.12*(1-d/140))+')'; ctx.lineWidth=1; ctx.beginPath(); ctx.moveTo(a.x,a.y); ctx.lineTo(b.x,b.y); ctx.stroke(); }
       }
-      for(var i=0;i<pts.length;i++){
-        for(var j=i+1;j<pts.length;j++){
-          var a=pts[i], b=pts[j];
-          var dx=a.x-b.x, dy=a.y-b.y;
-          var d = Math.sqrt(dx*dx+dy*dy);
-          if(d<140){
-            ctx.strokeStyle = 'rgba('+a.c+','+(0.12*(1-d/140))+')';
-            ctx.lineWidth = 1;
-            ctx.beginPath(); ctx.moveTo(a.x,a.y); ctx.lineTo(b.x,b.y); ctx.stroke();
-          }
-        }
-      }
-      for(var i=0;i<pts.length;i++){
-        var p = pts[i];
-        ctx.fillStyle = 'rgba('+p.c+',0.55)';
-        ctx.beginPath(); ctx.arc(p.x,p.y,1.6,0,Math.PI*2); ctx.fill();
-      }
-      requestAnimationFrame(step);
+      for(var i=0;i<pts.length;i++){ var p=pts[i]; ctx.fillStyle='rgba('+p.c+',.55)'; ctx.beginPath(); ctx.arc(p.x,p.y,1.5,0,Math.PI*2); ctx.fill(); }
+      requestAnimationFrame(frame);
     }
     window.addEventListener('resize', init);
-    init(); requestAnimationFrame(step);
+    init(); if(!reduceMotion) requestAnimationFrame(frame); else frame();
   })();
 
-  /* ---------- cursor glow ---------- */
+  /* ============ cursor glow ============ */
   (function(){
-    var glow = document.getElementById('cursor-glow');
-    var tx=0, ty=0, cx=0, cy=0;
-    window.addEventListener('mousemove', function(e){ tx=e.clientX; ty=e.clientY; });
-    function raf(){
-      cx += (tx-cx)*0.12; cy += (ty-cy)*0.12;
-      glow.style.transform = 'translate3d('+cx+'px,'+cy+'px,0)';
-      requestAnimationFrame(raf);
-    }
-    raf();
+    var glow = document.getElementById('cursor-glow'); if(!glow) return;
+    var tx=innerWidth/2, ty=innerHeight/2, cx=tx, cy=ty;
+    window.addEventListener('mousemove', function(e){ tx=e.clientX; ty=e.clientY; }, {passive:true});
+    (function raf(){ cx+=(tx-cx)*.12; cy+=(ty-cy)*.12; glow.style.transform='translate3d('+cx+'px,'+cy+'px,0)'; requestAnimationFrame(raf); })();
   })();
 
-  /* ---------- count-up ---------- */
+  /* ============ count-up & vicious loop pulse ============ */
   function runCountUps(root){
     root.querySelectorAll('.num[data-count]').forEach(function(el){
-      if(el.dataset.done) return;
-      el.dataset.done = '1';
-      var target = parseInt(el.dataset.count, 10);
-      var suffix = el.dataset.suffix || '';
-      var start = performance.now(), dur = 1100;
-      function tick(now){
-        var p = Math.min(1, (now-start)/dur);
-        var eased = 1 - Math.pow(1-p, 3);
-        var val = Math.round(target*eased);
-        el.textContent = val.toLocaleString('ko-KR') + suffix;
+      if(el.dataset.done) return; el.dataset.done='1';
+      var target=parseInt(el.dataset.count,10), suffix=el.dataset.suffix||'', start=performance.now(), dur=1100;
+      (function tick(now){
+        var p=Math.min(1,(now-start)/dur), e=1-Math.pow(1-p,3);
+        el.textContent=Math.round(target*e).toLocaleString('ko-KR')+suffix;
         if(p<1) requestAnimationFrame(tick);
-      }
-      requestAnimationFrame(tick);
+      })(start);
     });
   }
 
-  /* ---------- bar fills ---------- */
-  function runBars(root){
-    root.querySelectorAll('.bar-fill[data-w]').forEach(function(el){
-      requestAnimationFrame(function(){ el.style.width = el.dataset.w + '%'; });
-    });
-  }
-
-  /* ---------- orbit menu ---------- */
+  /* ============ orbit menu ============ */
   (function(){
-    var detail = {
+    var detail={
       1:'세정·식각가스를 저GWP 대체가스로 바꿔 <strong>배출량 자체</strong>를 줄입니다.',
       2:'배가스 처리 설비를 통합해 <strong>제거효율과 에너지효율</strong>을 함께 높입니다.',
       3:'세정에 쓰인 물을 다단계로 정제해 <strong>용수와 폐수</strong>를 동시에 줄입니다.',
@@ -698,52 +687,34 @@
       node.addEventListener('click', function(){
         document.querySelectorAll('.orbit-node').forEach(function(n){ n.classList.remove('active'); });
         node.classList.add('active');
-        var i = node.dataset.i;
-        document.getElementById('orbit-detail').innerHTML = detail[i];
+        document.getElementById('orbit-detail').innerHTML = detail[node.dataset.i];
       });
     });
   })();
 
-  /* ---------- tabs ---------- */
-  document.querySelectorAll('.tab-btn').forEach(function(btn){
-    btn.addEventListener('click', function(){
-      var wrap = btn.closest('section');
-      wrap.querySelectorAll('.tab-btn').forEach(function(b){ b.classList.remove('active'); });
-      wrap.querySelectorAll('.tab-panel').forEach(function(p){ p.classList.remove('active'); });
-      btn.classList.add('active');
-      var panel = wrap.querySelector('#'+btn.dataset.tab);
-      panel.classList.add('active');
-      runBars(panel);
-    });
-  });
+  /* ============ flip cards ============ */
+  document.querySelectorAll('.flip-card').forEach(function(c){ c.addEventListener('click', function(){ c.classList.toggle('flipped'); }); });
 
-  /* ---------- flip cards ---------- */
-  document.querySelectorAll('.flip-card').forEach(function(card){
-    card.addEventListener('click', function(){ card.classList.toggle('flipped'); });
-  });
-
-  /* ---------- reach toggle ---------- */
+  /* ============ reach toggle ============ */
   (function(){
-    var cb = document.getElementById('reachToggle');
-    var lbl = document.getElementById('reachLabel');
-    var dia = document.getElementById('reachDiagram');
+    var cb=document.getElementById('reachToggle'), lbl=document.getElementById('reachLabel'), dia=document.getElementById('reachDiagram');
     if(!cb) return;
     cb.addEventListener('change', function(){
-      if(cb.checked){ lbl.textContent = '인근 지역사회까지 확장'; dia.classList.add('expanded'); }
-      else{ lbl.textContent = '공장 내부 활용만'; dia.classList.remove('expanded'); }
+      if(cb.checked){ lbl.textContent='인근 지역사회까지 확장'; dia.classList.add('expanded'); }
+      else{ lbl.textContent='공장 내부 활용만'; dia.classList.remove('expanded'); }
     });
   })();
 
-  /* ---------- EMS accordion ---------- */
+  /* ============ EMS accordion ============ */
   document.querySelectorAll('#emsFlow .flow-v-step').forEach(function(step){
     step.querySelector('.flow-v-head').addEventListener('click', function(){
-      var wasOpen = step.classList.contains('open');
+      var was=step.classList.contains('open');
       document.querySelectorAll('#emsFlow .flow-v-step').forEach(function(s){ s.classList.remove('open'); });
-      if(!wasOpen) step.classList.add('open');
+      if(!was) step.classList.add('open');
     });
   });
 
-  /* ---------- predictive flow tooltip ---------- */
+  /* ============ predictive flow ============ */
   document.querySelectorAll('#predFlow .flow-h-node').forEach(function(node){
     node.addEventListener('click', function(){
       document.querySelectorAll('#predFlow .flow-h-node').forEach(function(n){ n.classList.remove('active'); });
@@ -752,74 +723,179 @@
     });
   });
 
-  /* ---------- EMS live dashboard ---------- */
-  var dashTimer = null, sparkData = [];
+  /* ============ Chart.js theme + factory ============ */
+  var charts = {};
+  var C = { blue:'#3987e5', blue2:'#5aa0f2', aqua:'#23b381', amber:'#e0a03a', violet:'#9085e9', warn:'#fab219', good:'#22c55e', crit:'#e2584f', ink2:'#c6c8d4', ink3:'#7d8296', grid:'rgba(255,255,255,.07)' };
+
+  function chartsReady(){ return typeof window.Chart !== 'undefined'; }
+  function themeDefaults(){
+    if(!chartsReady()) return;
+    Chart.defaults.color = C.ink2;
+    Chart.defaults.font.family = "'Pretendard', sans-serif";
+    Chart.defaults.font.size = 11;
+    Chart.defaults.borderColor = C.grid;
+    Chart.defaults.plugins.legend.labels.usePointStyle = true;
+    Chart.defaults.plugins.legend.labels.boxWidth = 8;
+    Chart.defaults.plugins.legend.labels.boxHeight = 8;
+    Chart.defaults.plugins.legend.labels.padding = 14;
+  }
+  function tip(labelFn){
+    var t = {
+      backgroundColor:'rgba(10,12,20,.94)', borderColor:'rgba(255,255,255,.14)', borderWidth:1,
+      titleColor:'#fff', bodyColor:C.ink2, padding:10, cornerRadius:10, displayColors:true, boxPadding:4,
+      titleFont:{weight:'600'}, bodyFont:{family:"'JetBrains Mono', monospace"}
+    };
+    if(labelFn) t.callbacks = { label: labelFn };
+    return t;
+  }
+  function grad(ctx, area, c1, c2){
+    if(!area) return c1;
+    var g = ctx.createLinearGradient(0, area.top, 0, area.bottom);
+    g.addColorStop(0, c1); g.addColorStop(1, c2); return g;
+  }
+  function hexA(hex, a){
+    var n=parseInt(hex.slice(1),16); return 'rgba('+((n>>16)&255)+','+((n>>8)&255)+','+(n&255)+','+a+')';
+  }
+
+  var builders = {
+    problem: function(cv){
+      return new Chart(cv, { type:'doughnut',
+        data:{ labels:['공정 장비','냉각 · 공조','기타(조명·반송 등)'],
+          datasets:[{ data:[45,35,20], backgroundColor:[hexA(C.blue,.85), hexA(C.amber,.85), hexA(C.violet,.7)],
+            borderColor:'rgba(9,10,20,.9)', borderWidth:3, hoverOffset:8 }] },
+        options:{ responsive:true, maintainAspectRatio:false, cutout:'62%', animation:{ animateRotate:true, duration:1100 },
+          plugins:{ legend:{ position:'bottom' }, tooltip:tip(function(c){ return ' '+c.label+' · 약 '+c.parsed+'%'; }) } } });
+    },
+    gas: function(cv){
+      var ctx = cv.getContext('2d');
+      return new Chart(cv, { type:'bar',
+        data:{ labels:['SF₆','NF₃','저GWP 대체가스'],
+          datasets:[{ data:[23500,17200,900], borderRadius:7, borderSkipped:false, maxBarThickness:44,
+            backgroundColor:function(c){ var a=c.chart.chartArea; if(!a) return C.warn;
+              var cols=[grad(ctx,a,C.crit,hexA(C.crit,.35)), grad(ctx,a,C.warn,hexA(C.warn,.35)), grad(ctx,a,C.good,hexA(C.good,.35))]; return cols[c.dataIndex]; } }] },
+        options:{ indexAxis:'y', responsive:true, maintainAspectRatio:false, animation:{ duration:1200, easing:'easeOutQuart' },
+          plugins:{ legend:{ display:false }, tooltip:tip(function(c){ return ' GWP ≈ '+c.parsed.x.toLocaleString('ko-KR'); }) },
+          scales:{ x:{ grid:{ color:C.grid }, ticks:{ color:C.ink3, callback:function(v){ return v>=1000?(v/1000)+'k':v; } } }, y:{ grid:{ display:false }, ticks:{ color:C.ink2, font:{ size:12, weight:'600' } } } } } });
+    },
+    scrubber: function(cv){
+      return new Chart(cv, { type:'radar',
+        data:{ labels:['유해가스 제거율','에너지 효율','공간 집적도','유지보수 편의','통합 모니터링'],
+          datasets:[
+            { label:'개별 처리', data:[70,58,50,55,45], borderColor:C.ink3, backgroundColor:hexA(C.ink3,.14), borderWidth:2, pointBackgroundColor:C.ink3, pointRadius:3 },
+            { label:'통합 고도화', data:[92,84,88,80,90], borderColor:C.aqua, backgroundColor:hexA(C.aqua,.2), borderWidth:2, pointBackgroundColor:C.aqua, pointRadius:3 }
+          ] },
+        options:{ responsive:true, maintainAspectRatio:false, animation:{ duration:1100 },
+          plugins:{ legend:{ position:'bottom' }, tooltip:tip() },
+          scales:{ r:{ min:0, max:100, angleLines:{ color:C.grid }, grid:{ color:C.grid }, pointLabels:{ color:C.ink2, font:{ size:10 } }, ticks:{ display:false } } } } });
+    },
+    water: function(cv){
+      return new Chart(cv, { type:'doughnut',
+        data:{ labels:['재사용 회수','2차 용도 전환','최종 폐수'],
+          datasets:[{ data:[40,25,35], backgroundColor:[hexA(C.aqua,.9), hexA(C.blue,.8), hexA(C.ink3,.5)],
+            borderColor:'rgba(9,10,20,.9)', borderWidth:3, hoverOffset:8 }] },
+        options:{ responsive:true, maintainAspectRatio:false, cutout:'64%', animation:{ animateRotate:true, duration:1100 },
+          plugins:{ legend:{ position:'bottom' }, tooltip:tip(function(c){ return ' '+c.label+' · 약 '+c.parsed+'%'; }) } } });
+    },
+    heatWaste: function(cv){
+      return new Chart(cv, { type:'bar',
+        data:{ labels:['회수 없음','폐열 회수 적용'],
+          datasets:[
+            { label:'재사용', data:[8,58], backgroundColor:hexA(C.aqua,.85), borderRadius:6, stack:'s' },
+            { label:'대기 방출', data:[92,42], backgroundColor:hexA(C.ink3,.45), borderRadius:6, stack:'s' }
+          ] },
+        options:{ responsive:true, maintainAspectRatio:false, animation:{ duration:1100 },
+          plugins:{ legend:{ position:'bottom' }, tooltip:tip(function(c){ return ' '+c.dataset.label+' 약 '+c.parsed.y+'%'; }) },
+          scales:{ x:{ grid:{ display:false }, ticks:{ color:C.ink2, font:{ weight:'600' } } }, y:{ stacked:true, max:100, grid:{ color:C.grid }, ticks:{ color:C.ink3, callback:function(v){ return v+'%'; } } } } } });
+    },
+    heatEffect: function(cv){
+      return new Chart(cv, { type:'bar',
+        data:{ labels:['에너지 비용','탄소 배출'],
+          datasets:[
+            { label:'회수 전', data:[100,100], backgroundColor:hexA(C.amber,.85), borderRadius:6, maxBarThickness:38 },
+            { label:'회수 후', data:[78,81], backgroundColor:hexA(C.good,.85), borderRadius:6, maxBarThickness:38 }
+          ] },
+        options:{ responsive:true, maintainAspectRatio:false, animation:{ duration:1100, easing:'easeOutQuart' },
+          plugins:{ legend:{ position:'bottom' }, tooltip:tip(function(c){ return ' '+c.dataset.label+' · 지수 '+c.parsed.y; }) },
+          scales:{ x:{ grid:{ display:false }, ticks:{ color:C.ink2, font:{ weight:'600' } } }, y:{ grid:{ color:C.grid }, ticks:{ color:C.ink3 } } } } });
+    },
+    predict: function(cv){
+      var ctx = cv.getContext('2d');
+      var labels=[]; for(var h=0;h<=24;h+=2) labels.push(h+'시');
+      var before=[42,48,60,88,96,82,70,58,66,80,74,55,44];
+      var after =[46,50,58,66,70,68,64,62,66,70,68,60,52];
+      return new Chart(cv, { type:'line',
+        data:{ labels:labels, datasets:[
+          { label:'예측 없이 대응', data:before, borderColor:C.warn, backgroundColor:hexA(C.warn,.06), borderWidth:2.5, tension:.4, pointRadius:0, pointHoverRadius:5, fill:true },
+          { label:'예측 기반 사전 조정', data:after, borderColor:C.good, borderWidth:2.5, tension:.45, pointRadius:0, pointHoverRadius:5,
+            backgroundColor:function(c){ var a=c.chart.chartArea; return grad(ctx,a,hexA(C.good,.28),hexA(C.good,0)); }, fill:true }
+        ] },
+        options:{ responsive:true, maintainAspectRatio:false, interaction:{ mode:'index', intersect:false }, animation:{ duration:1400, easing:'easeOutQuart' },
+          plugins:{ legend:{ position:'bottom' }, tooltip:tip(function(c){ return ' '+c.dataset.label+' · '+c.parsed.y; }) },
+          scales:{ x:{ grid:{ display:false }, ticks:{ color:C.ink3, maxRotation:0, autoSkip:true, maxTicksLimit:7 } }, y:{ grid:{ color:C.grid }, ticks:{ color:C.ink3, callback:function(v){ return v; } }, title:{ display:true, text:'상대 부하', color:C.ink3, font:{ size:9 } } } } } });
+    },
+    emsLive: function(cv){
+      var data=[]; for(var i=0;i<30;i++) data.push(55+Math.random()*10);
+      var ctx=cv.getContext('2d');
+      return new Chart(cv, { type:'line',
+        data:{ labels:data.map(function(_,i){ return i; }),
+          datasets:[{ data:data.slice(), borderColor:C.blue2, borderWidth:2, tension:.4, pointRadius:0,
+            backgroundColor:function(c){ var a=c.chart.chartArea; return grad(ctx,a,hexA(C.blue,.3),hexA(C.blue,0)); }, fill:true }] },
+        options:{ responsive:true, maintainAspectRatio:false, animation:false,
+          plugins:{ legend:{ display:false }, tooltip:{ enabled:false } },
+          scales:{ x:{ display:false }, y:{ display:false, min:30, max:95 } } } });
+    }
+  };
+
+  function initChart(cv){
+    if(!chartsReady() || cv.dataset.mounted) return;
+    var key = cv.dataset.chart; if(!builders[key]) return;
+    cv.dataset.mounted='1';
+    charts[key] = builders[key](cv);
+  }
+  function initChartsIn(slide){ slide.querySelectorAll('canvas[data-chart]').forEach(initChart); }
+
+  /* ============ EMS live dashboard ============ */
+  var dashTimer=null, live=[];
   function startDashboard(){
     if(dashTimer) return;
-    sparkData = [];
-    for(var i=0;i<40;i++) sparkData.push(55 + Math.random()*10);
+    var chart = charts['emsLive'];
+    live = chart ? chart.data.datasets[0].data.slice() : (function(){ var a=[]; for(var i=0;i<30;i++) a.push(55+Math.random()*10); return a; })();
     function tick(){
-      var last = sparkData[sparkData.length-1];
-      var next = Math.max(35, Math.min(92, last + (Math.random()-0.5)*10));
-      sparkData.push(next); if(sparkData.length>40) sparkData.shift();
-
-      var pct = Math.round(next);
-      document.getElementById('gaugeNum').textContent = pct+'%';
-      var c = document.getElementById('gaugeArc');
-      var circumference = 389.6;
-      c.style.transition = 'stroke-dashoffset .8s ease';
-      c.setAttribute('stroke-dashoffset', String(circumference*(1-pct/100)));
-
-      var pts = sparkData.map(function(v,i){
-        var x = (i/(sparkData.length-1))*320;
-        var y = 50 - (v/100)*46;
-        return x.toFixed(1)+','+y.toFixed(1);
-      }).join(' ');
-      document.getElementById('sparkPoly').setAttribute('points', pts);
-
-      document.getElementById('rPeak').textContent = (38 + Math.round(next/10)) + '℃';
-      document.getElementById('rLoad').textContent = (2 + (pct%3));
-      document.getElementById('rSave').textContent = Math.round(120 + next*3);
+      var last=live[live.length-1];
+      var next=Math.max(35,Math.min(92, last+(Math.random()-.5)*10));
+      live.push(next); if(live.length>30) live.shift();
+      var pct=Math.round(next);
+      var gn=document.getElementById('gaugeNum'); if(gn) gn.textContent=pct+'%';
+      var arc=document.getElementById('gaugeArc');
+      if(arc){ var circ=383.3; arc.style.transition='stroke-dashoffset .8s ease'; arc.setAttribute('stroke-dashoffset', String(circ*(1-pct/100))); }
+      var rp=document.getElementById('rPeak'); if(rp) rp.textContent=(38+Math.round(next/10))+'℃';
+      var rl=document.getElementById('rLoad'); if(rl) rl.textContent=(2+(pct%3));
+      var rs=document.getElementById('rSave'); if(rs) rs.textContent=Math.round(120+next*3);
+      var ch=charts['emsLive'];
+      if(ch){ ch.data.datasets[0].data=live.slice(); ch.data.labels=live.map(function(_,i){ return i; }); ch.update('none'); }
     }
-    tick();
-    dashTimer = setInterval(tick, 1200);
+    tick(); dashTimer=setInterval(tick,1200);
   }
   function stopDashboard(){ if(dashTimer){ clearInterval(dashTimer); dashTimer=null; } }
 
-  /* ---------- predictive line chart draw-in ---------- */
-  function drawLines(root){
-    ['lineBefore','lineAfter'].forEach(function(id){
-      var path = root.querySelector('#'+id);
-      if(!path || path.dataset.done) return;
-      path.dataset.done = '1';
-      var len = path.getTotalLength();
-      path.style.strokeDasharray = len;
-      path.style.strokeDashoffset = len;
-      path.getBoundingClientRect();
-      path.style.transition = 'stroke-dashoffset 1.6s cubic-bezier(.2,.8,.2,1)';
-      requestAnimationFrame(function(){ path.style.strokeDashoffset = 0; });
-    });
+  /* ============ Reveal init ============ */
+  function onSlide(slide){
+    if(!slide) return;
+    runCountUps(slide);
+    initChartsIn(slide);
+    if(slide.querySelector('canvas[data-chart="emsLive"]')) startDashboard(); else stopDashboard();
+    // charts sometimes need a resize after reveal's transform settles
+    setTimeout(function(){ Object.keys(charts).forEach(function(k){ if(charts[k]) charts[k].resize(); }); }, 380);
   }
 
-  /* ---------- reveal init ---------- */
+  themeDefaults();
   Reveal.initialize({
-    hash: true, controls: true, progress: true, center: true,
-    transition: 'slide', transitionSpeed: 'fast',
-    slideNumber: 'c/t',
-    width: 1024, height: 768, margin: 0.06, minScale: 0.2, maxScale: 2.0
-  }).then(function(){
-    var current = Reveal.getCurrentSlide();
-    runCountUps(current); runBars(current); drawLines(current);
-    if(current.querySelector('#gaugeArc')) startDashboard();
-  });
-
-  Reveal.on('slidechanged', function(event){
-    var slide = event.currentSlide;
-    runCountUps(slide);
-    runBars(slide);
-    drawLines(slide);
-    if(slide.querySelector('#gaugeArc')) startDashboard(); else stopDashboard();
-  });
+    hash:true, controls:true, progress:true, center:true,
+    transition:'slide', transitionSpeed:'default', backgroundTransition:'fade',
+    slideNumber:'c/t', width:1024, height:768, margin:0.055, minScale:0.2, maxScale:2.0
+  }).then(function(){ onSlide(Reveal.getCurrentSlide()); });
+  Reveal.on('slidechanged', function(e){ onSlide(e.currentSlide); });
+})();
 </script>
 </body>
 </html>
