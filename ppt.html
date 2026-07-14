@@ -67,21 +67,27 @@
   }
 
   .reveal{ font-family: var(--sans); color: var(--ink-1); font-size: 25px; }
-  .reveal .slides{ z-index: 2; }
+  .reveal .slides{ z-index: 2; height: 100%; }
   .reveal ::selection{ background: rgba(57,135,229,.35); }
 
-  .reveal .slides section{
+  /* full-height cards: the section fills the stage and vertically centers its content */
+  .reveal .slides > section{
     background: linear-gradient(160deg, rgba(22,25,40,.82) 0%, rgba(9,10,20,.9) 100%);
     border: 1px solid var(--border);
     border-radius: 24px;
-    padding: 44px 54px 38px;
+    padding: 40px 54px;
     box-shadow: 0 40px 90px rgba(0,0,0,.5), inset 0 1px 0 rgba(255,255,255,.05);
     -webkit-backdrop-filter: blur(7px) saturate(1.1);
     backdrop-filter: blur(7px) saturate(1.1);
     text-align: left;
-    height: 100%;
     box-sizing: border-box;
+    height: 100%;
+    display: flex !important;
+    flex-direction: column;
+    justify-content: center;
   }
+  /* the content should never overspill the card top/bottom */
+  .reveal .slides > section > *{ flex-shrink: 0; }
 
   .reveal h1, .reveal h2, .reveal h3{ font-family: var(--sans); text-transform: none; letter-spacing: -0.02em; }
   .reveal h1{ font-size: 1.9em; font-weight: 800; line-height: 1.28; color: var(--ink-1); margin: 0 0 14px; }
@@ -150,6 +156,16 @@
   .chart-box{ position:relative; width:100%; }
   .chart-box canvas{ display:block; }
 
+  /* ── media (photography) ───────────────────────── */
+  .media{ position:relative; width:100%; border-radius:14px; overflow:hidden; border:1px solid var(--border); box-shadow:0 14px 40px rgba(0,0,0,.45); background:#0c0e18; }
+  .media img{ width:100%; height:100%; object-fit:cover; display:block; transition: transform .7s var(--ease); }
+  .media:hover img{ transform: scale(1.06); }
+  .media .m-cap{ position:absolute; left:0; right:0; bottom:0; padding:9px 13px; font-family:var(--mono); font-size:0.42em; letter-spacing:.02em; color:#eef1fa; background:linear-gradient(transparent, rgba(4,5,11,.9)); }
+  .media .m-cap i{ color: var(--blue-2); margin-right:6px; }
+  .media.img-failed{ background:linear-gradient(135deg, rgba(57,135,229,.2), rgba(144,133,233,.16)); }
+  .media.img-failed img{ display:none; }
+  .media.img-failed::before{ content:"\f03e"; font-family:"Font Awesome 6 Free"; font-weight:900; position:absolute; inset:0; display:flex; align-items:center; justify-content:center; font-size:1.6em; color:rgba(255,255,255,.35); }
+
   /* ── title slide ───────────────────────────────── */
   .title-slide{ background: radial-gradient(ellipse at 28% 18%, rgba(57,135,229,.22), transparent 55%), radial-gradient(ellipse at 78% 82%, rgba(144,133,233,.18), transparent 55%), linear-gradient(180deg,#06070f,#040508) !important; }
   .title-badge{ font-family: var(--mono); font-size:0.55em; letter-spacing:.09em; text-transform:uppercase; color: var(--ink-2); display:inline-flex; align-items:center; gap:10px; border:1px solid var(--border); border-radius:100px; padding:8px 20px; margin-bottom:26px; }
@@ -179,16 +195,22 @@
 
   /* ── flip cards ────────────────────────────────── */
   .flip-grid{ display:flex; gap:16px; }
-  .flip-card{ flex:1; height:204px; perspective:1200px; cursor:pointer; }
+  .flip-card{ flex:1; height:232px; perspective:1200px; cursor:pointer; }
   .flip-inner{ position:relative; width:100%; height:100%; transition: transform .7s var(--ease); transform-style:preserve-3d; }
   .flip-card.flipped .flip-inner{ transform: rotateY(180deg); }
   .flip-face{ position:absolute; inset:0; -webkit-backface-visibility:hidden; backface-visibility:hidden; border-radius:16px; border:1px solid var(--border); padding:18px; display:flex; flex-direction:column; }
-  .flip-front{ background: var(--surface); align-items:center; justify-content:center; text-align:center; gap:10px; }
-  .flip-front .ico{ width:46px; height:46px; border-radius:13px; background: rgba(224,160,58,.16); color: var(--amber); display:flex; align-items:center; justify-content:center; font-size:1.15em; }
-  .flip-front strong{ font-size:0.76em; }
+  .flip-front{ background: var(--surface); text-align:left; gap:9px; transition: border-color .25s, background .25s; }
+  .flip-card:hover .flip-front{ border-color: rgba(224,160,58,.4); background: rgba(224,160,58,.06); }
+  .flip-front .fc-top{ display:flex; align-items:center; justify-content:space-between; }
+  .flip-front .ico{ width:42px; height:42px; border-radius:12px; background: rgba(224,160,58,.16); color: var(--amber); display:flex; align-items:center; justify-content:center; font-size:1.05em; }
+  .flip-front strong{ font-size:0.8em; }
+  .flip-front p{ font-size:0.62em !important; color: var(--ink-3) !important; margin:0 !important; line-height:1.6 !important; flex:1; }
   .flip-front .badge{ font-family: var(--mono); font-size:0.42em; color: var(--ink-3); border:1px solid var(--border); border-radius:100px; padding:3px 10px; }
-  .flip-back{ background: rgba(224,160,58,.1); transform: rotateY(180deg); justify-content:center; }
-  .flip-back p{ font-size:0.62em !important; margin:0 !important; color:#f2ddb4 !important; line-height:1.6 !important; }
+  .flip-front .fc-flip{ font-family: var(--mono); font-size:0.44em; color: var(--amber); align-self:flex-start; opacity:.85; }
+  .flip-back{ background: rgba(224,160,58,.1); transform: rotateY(180deg); justify-content:center; align-items:center; text-align:center; gap:12px; }
+  .flip-back .fc-tag{ font-family: var(--mono); font-size:0.44em; letter-spacing:.06em; color: var(--amber); border:1px solid rgba(224,160,58,.4); border-radius:100px; padding:3px 12px; }
+  .flip-back p{ font-size:0.64em !important; margin:0 !important; color:#f6e3bd !important; line-height:1.9 !important; }
+  .flip-back p i{ color: var(--amber); font-size:0.8em; }
 
   /* ── toggle ────────────────────────────────────── */
   .toggle-row{ display:flex; align-items:center; gap:14px; margin: 4px 0 14px; }
@@ -229,17 +251,17 @@
   .flow-h-detail p{ font-size:0.66em !important; margin:0 !important; }
 
   /* ── EMS dashboard ─────────────────────────────── */
-  .dash{ display:flex; gap:20px; align-items:center; }
+  .dash{ display:flex; gap:26px; align-items:center; padding:30px 32px; }
   .gauge-wrap{ position:relative; width:148px; height:148px; flex-shrink:0; }
   .gauge-wrap svg{ transform: rotate(-90deg); }
   .gauge-val{ position:absolute; inset:0; display:flex; flex-direction:column; align-items:center; justify-content:center; }
   .gauge-val .n{ font-family: var(--mono); font-size:1.3em; font-weight:700; color: var(--aqua); }
   .gauge-val .u{ font-size:0.4em; color: var(--ink-3); margin-top:2px; }
   .dash-right{ flex:1; min-width:0; }
-  .dash-readout{ display:flex; gap:10px; margin-top:10px; }
-  .readout-tile{ flex:1; background: rgba(255,255,255,.03); border:1px solid var(--border); border-radius:11px; padding:9px 10px; text-align:center; }
-  .readout-tile .n{ font-family: var(--mono); font-size:0.82em; font-weight:700; color: var(--ink-1); display:block; }
-  .readout-tile .l{ font-size:0.4em; color: var(--ink-3); }
+  .dash-readout{ display:flex; gap:12px; margin-top:14px; }
+  .readout-tile{ flex:1; background: rgba(255,255,255,.03); border:1px solid var(--border); border-radius:12px; padding:14px 12px; text-align:center; }
+  .readout-tile .n{ font-family: var(--mono); font-size:0.96em; font-weight:700; color: var(--ink-1); display:block; }
+  .readout-tile .l{ font-size:0.42em; color: var(--ink-3); }
   .live-dot{ width:7px; height:7px; border-radius:50%; background: var(--good); display:inline-block; margin-right:7px; box-shadow:0 0 7px var(--good); animation: blink 1.6s infinite; }
   @keyframes blink{ 0%,100%{ opacity:1;} 50%{ opacity:.3; } }
 
@@ -258,16 +280,20 @@
   @keyframes pulseArrow{ 0%,100%{ opacity:.3; transform:translateY(0);} 50%{ opacity:1; transform:translateY(2px);} }
 
   /* ── vicious-cycle diagram ─────────────────────── */
-  .loop-diagram{ position:relative; width:210px; height:210px; }
+  .loop-shell{ display:flex; align-items:center; gap:22px; margin-top:6px; }
+  .loop-diagram{ position:relative; width:200px; height:200px; flex-shrink:0; }
   .loop-ring{ position:absolute; inset:12px; border-radius:50%; border:2px dashed rgba(224,160,58,.4); animation: spin 16s linear infinite; }
   .loop-diagram:hover .loop-ring{ animation-play-state: paused; }
   @keyframes spin{ to{ transform: rotate(360deg);} }
-  .loop-node{ position:absolute; width:66px; height:66px; border-radius:50%; background:var(--surface); border:1px solid var(--border); display:flex; flex-direction:column; align-items:center; justify-content:center; gap:2px; color:var(--amber); transition:transform .25s var(--ease-out-back); }
+  .loop-node{ position:absolute; width:64px; height:64px; border-radius:50%; background:var(--surface); border:1px solid var(--border); display:flex; flex-direction:column; align-items:center; justify-content:center; gap:2px; color:var(--amber); cursor:pointer; transition:transform .25s var(--ease-out-back), background .2s, border-color .2s; }
   .loop-node:hover{ transform:scale(1.14); background:rgba(224,160,58,.16); }
+  .loop-node.active{ background:rgba(224,160,58,.22); border-color:rgba(224,160,58,.6); box-shadow:0 0 20px rgba(224,160,58,.3); }
   .loop-node span{ font-size:9px; color:var(--ink-2); font-weight:600; }
-  .loop-node.ln1{ top:0; left:50%; margin-left:-33px; }
+  .loop-node.ln1{ top:0; left:50%; margin-left:-32px; }
   .loop-node.ln2{ bottom:12px; right:0; } .loop-node.ln3{ bottom:12px; left:0; }
   .loop-center{ position:absolute; inset:0; display:flex; align-items:center; justify-content:center; font-family:var(--mono); font-size:10px; color:var(--ink-3); letter-spacing:.05em; }
+  .loop-detail{ flex:1; font-size:0.7em !important; color:var(--ink-2) !important; margin:0 !important; padding:14px 16px; background:rgba(224,160,58,.08); border:1px solid rgba(224,160,58,.22); border-left:3px solid var(--amber); border-radius:12px; line-height:1.6 !important; }
+  .loop-detail i{ color:var(--amber); }
 
   /* ── reveal chrome ─────────────────────────────── */
   .reveal .progress{ height:3px; color: var(--blue); background: rgba(255,255,255,.06); }
@@ -333,12 +359,15 @@
             <div class="stat-tile"><span class="num" data-count="23500" data-suffix="배">0</span><span class="lbl">세정가스 SF6의<br>온난화지수 (CO₂ 대비)</span></div>
             <div class="stat-tile tone-amber"><span class="num-text">24H</span><span class="lbl">멈추지 않는<br>냉각 설비</span></div>
           </div>
-          <div class="loop-diagram" id="loop1" style="margin:6px auto 0;">
-            <div class="loop-ring"></div>
-            <div class="loop-node ln1"><i class="fa-solid fa-fire"></i><span>발열</span></div>
-            <div class="loop-node ln2"><i class="fa-solid fa-snowflake"></i><span>냉각</span></div>
-            <div class="loop-node ln3"><i class="fa-solid fa-plug-circle-bolt"></i><span>전력소모</span></div>
-            <div class="loop-center"><span>악순환</span></div>
+          <div class="loop-shell">
+            <div class="loop-diagram" id="loop1">
+              <div class="loop-ring"></div>
+              <div class="loop-node ln1" data-d="① 고온 공정에서 막대한 열이 발생합니다."><i class="fa-solid fa-fire"></i><span>발열</span></div>
+              <div class="loop-node ln2" data-d="② 그 열을 식히려 대규모 냉각 설비가 돌아갑니다."><i class="fa-solid fa-snowflake"></i><span>냉각</span></div>
+              <div class="loop-node ln3" data-d="③ 냉각에 쓴 전력이 다시 열을 만들어 — 처음으로 돌아갑니다."><i class="fa-solid fa-plug-circle-bolt"></i><span>전력소모</span></div>
+              <div class="loop-center"><span>악순환</span></div>
+            </div>
+            <p class="loop-detail" id="loopDetail"><i class="fa-solid fa-hand-pointer" style="margin-right:6px;"></i>각 단계를 눌러 보세요 — 왜 악순환이 되는지 짚어 줍니다.</p>
           </div>
         </div>
         <div class="col-b">
@@ -424,11 +453,12 @@
             <li><div class="icon aqua"><i class="fa-solid fa-filter-circle-xmark"></i></div><div class="body"><strong>다단계 정제</strong><span>역삼투 · 자외선 · 이온교환을 거쳐 초순수 수준으로 되돌립니다.</span></div></li>
             <li><div class="icon aqua"><i class="fa-solid fa-recycle"></i></div><div class="body"><strong>이중 효과 — 용수↓ 폐수↓</strong><span>새로 끌어오는 물과 밖으로 내보내는 폐수를 동시에 줄입니다.</span></div></li>
           </ul>
+          <div class="highlight aqua"><p><i class="fa-solid fa-droplet" style="margin-right:6px;"></i>초순수 한 방울을 만드는 데도 여러 정제 단계가 필요합니다 — 그래서 <strong>다시 쓰는 것</strong> 자체가 곧 에너지 절약입니다.</p></div>
         </div>
         <div class="col-b">
           <div class="chart-frame">
             <div class="cf-title"><i class="fa-solid fa-chart-pie"></i> 사용 후 물의 행선지</div>
-            <div class="chart-box" style="height:212px;"><canvas data-chart="water"></canvas></div>
+            <div class="chart-box" style="height:280px;"><canvas data-chart="water"></canvas></div>
             <div class="cf-note">개념 예시 — 재사용 전환 비율이 높을수록 신규 취수·폐수가 줄어듦</div>
           </div>
         </div>
@@ -446,14 +476,18 @@
             <li><div class="icon amber"><i class="fa-solid fa-repeat"></i></div><div class="body"><strong>냉각이 또 다른 전력 소비를 부른다</strong><span>열을 빼내려고 칠러가 돌수록 전력이 늘고, 그만큼 다시 열이 발생하는 흐름이 반복됩니다.</span></div></li>
             <li><div class="icon amber"><i class="fa-solid fa-trash"></i></div><div class="body"><strong>정작 열은 그대로 버려진다</strong><span>비용을 들여 빼낸 열의 대부분은 그대로 대기 중으로 방출됩니다.</span></div></li>
           </ul>
+          <div class="highlight amber" style="margin-top:16px;"><p><i class="fa-solid fa-quote-left" style="margin-right:6px;"></i>버려지는 폐열을 모아 재활용하면 에너지 비용과 탄소 배출을 함께 줄일 수 있습니다.</p></div>
         </div>
         <div class="col-b">
+          <div class="media" style="height:150px; margin-bottom:14px;">
+            <img src="https://commons.wikimedia.org/wiki/Special:FilePath/Silicon_wafer.jpg?width=640" alt="반도체 실리콘 웨이퍼" loading="lazy" onerror="this.closest('.media').classList.add('img-failed')">
+            <div class="m-cap"><i class="fa-solid fa-microchip"></i>SILICON WAFER · 고온 공정이 시작되는 지점</div>
+          </div>
           <div class="chart-frame">
             <div class="cf-title"><i class="fa-solid fa-gauge-simple-high"></i> 뽑아낸 열, 얼마나 다시 쓰나</div>
-            <div class="chart-box" style="height:210px;"><canvas data-chart="heatWaste"></canvas></div>
+            <div class="chart-box" style="height:172px;"><canvas data-chart="heatWaste"></canvas></div>
             <div class="cf-note">개념 예시 — 회수 없이는 대부분 폐기, 회수하면 상당량 재사용</div>
           </div>
-          <div class="highlight amber" style="margin-top:12px;"><p><i class="fa-solid fa-quote-left" style="margin-right:6px;"></i>버려지는 폐열을 모아 재활용하면 에너지 비용과 탄소 배출을 함께 줄일 수 있습니다.</p></div>
         </div>
       </div>
     </section>
@@ -462,19 +496,34 @@
     <section>
       <div class="chip amber"><i class="fa-solid fa-fire-flame-curved"></i> SEC.04 · 폐열 회수 — 방법</div>
       <h2 class="section-title">열을 붙잡는 <span class="accent">세 가지 방식</span></h2>
-      <p class="hint" style="margin-bottom:14px;">카드를 클릭하면 뒤집혀 상세 설명이 나타납니다</p>
+      <p class="hint" style="margin-bottom:14px;">설명은 그대로 보이고, 카드를 클릭하면 <span style="color:var(--amber)">실제 적용 예시</span>가 나타납니다</p>
       <div class="flip-grid">
         <div class="flip-card"><div class="flip-inner">
-          <div class="flip-face flip-front"><div class="ico"><i class="fa-solid fa-water"></i></div><strong>냉각수 회수</strong><span class="badge">LOW TEMP</span></div>
-          <div class="flip-face flip-back"><p>설비를 식힌 냉각수가 품은 열을 열교환기로 빼내 공장 난방과 온수 공급에 그대로 활용합니다.</p></div>
+          <div class="flip-face flip-front">
+            <div class="fc-top"><div class="ico"><i class="fa-solid fa-water"></i></div><span class="badge">LOW TEMP</span></div>
+            <strong>냉각수 회수</strong>
+            <p>설비를 식힌 냉각수의 열을 열교환기로 빼내 공장 난방·온수로 활용합니다.</p>
+            <span class="fc-flip"><i class="fa-solid fa-rotate"></i> 예시 보기</span>
+          </div>
+          <div class="flip-face flip-back"><span class="fc-tag">적용 예시</span><p>30~60℃ 냉각수<br><i class="fa-solid fa-arrow-down"></i> 열교환기<br><i class="fa-solid fa-arrow-down"></i> 사무동 급탕·난방</p></div>
         </div></div>
         <div class="flip-card"><div class="flip-inner">
-          <div class="flip-face flip-front"><div class="ico"><i class="fa-solid fa-wind"></i></div><strong>배기 회수</strong><span class="badge">MID TEMP</span></div>
-          <div class="flip-face flip-back"><p>배출되는 뜨거운 공기의 열로 외부에서 들어오는 찬 공기를 미리 데워 급기 부하를 줄입니다.</p></div>
+          <div class="flip-face flip-front">
+            <div class="fc-top"><div class="ico"><i class="fa-solid fa-wind"></i></div><span class="badge">MID TEMP</span></div>
+            <strong>배기 회수</strong>
+            <p>배출되는 뜨거운 공기의 열로 외부에서 들어오는 찬 공기를 미리 데웁니다.</p>
+            <span class="fc-flip"><i class="fa-solid fa-rotate"></i> 예시 보기</span>
+          </div>
+          <div class="flip-face flip-back"><span class="fc-tag">적용 예시</span><p>공정 배기(더운 공기)<br><i class="fa-solid fa-arrow-down"></i> 열회수 환기(HRV)<br><i class="fa-solid fa-arrow-down"></i> 급기 예열 → 공조 부하↓</p></div>
         </div></div>
         <div class="flip-card"><div class="flip-inner">
-          <div class="flip-face flip-front"><div class="ico"><i class="fa-solid fa-bolt-lightning"></i></div><strong>폐열 발전</strong><span class="badge">HIGH TEMP</span></div>
-          <div class="flip-face flip-back"><p>고온 폐열로 유기랭킨사이클(ORC) 터빈을 돌려 열을 아예 전기로 바꿔 다시 씁니다.</p></div>
+          <div class="flip-face flip-front">
+            <div class="fc-top"><div class="ico"><i class="fa-solid fa-bolt-lightning"></i></div><span class="badge">HIGH TEMP</span></div>
+            <strong>폐열 발전</strong>
+            <p>고온 폐열로 유기랭킨사이클(ORC) 터빈을 돌려 전기로 바꿉니다.</p>
+            <span class="fc-flip"><i class="fa-solid fa-rotate"></i> 예시 보기</span>
+          </div>
+          <div class="flip-face flip-back"><span class="fc-tag">적용 예시</span><p>고온 증기·열매체<br><i class="fa-solid fa-arrow-down"></i> ORC 터빈 → 발전기<br><i class="fa-solid fa-arrow-down"></i> 전력 재사용</p></div>
         </div></div>
       </div>
       <div class="highlight amber" style="margin-top:18px;"><p><i class="fa-solid fa-arrow-down-up-across-line" style="margin-right:6px;"></i>온도가 높을수록 발전으로, 낮을수록 난방·예열로 — 열의 온도 수준에 맞춰 활용 방식을 조합하는 것이 핵심입니다.</p></div>
@@ -499,14 +548,18 @@
             <div class="reach-pipe"></div>
             <div class="reach-node end"><i class="fa-solid fa-city"></i></div>
           </div>
+          <div class="highlight" style="margin-top:10px;"><p><i class="fa-solid fa-info-circle" style="margin-right:6px;"></i>단, 모은 열을 <strong>언제·어디에·얼마나</strong> 보낼지 결정하는 시스템이 없으면 효과는 절반만 남습니다.</p></div>
         </div>
         <div class="col-b">
+          <div class="media" style="height:140px; margin-bottom:14px;">
+            <img src="https://commons.wikimedia.org/wiki/Special:FilePath/District_heating_pipes.JPG?width=640" alt="지역난방 배관" loading="lazy" onerror="this.closest('.media').classList.add('img-failed')">
+            <div class="m-cap"><i class="fa-solid fa-temperature-half"></i>DISTRICT HEATING · 회수한 열이 이동하는 배관</div>
+          </div>
           <div class="chart-frame">
             <div class="cf-title"><i class="fa-solid fa-chart-column"></i> 회수 전 vs 후 (개념 지수)</div>
-            <div class="chart-box" style="height:212px;"><canvas data-chart="heatEffect"></canvas></div>
+            <div class="chart-box" style="height:168px;"><canvas data-chart="heatEffect"></canvas></div>
             <div class="cf-note">기준 100 대비 상대 지수(예시) — 값이 낮을수록 좋음</div>
           </div>
-          <div class="highlight" style="margin-top:12px;"><p><i class="fa-solid fa-info-circle" style="margin-right:6px;"></i>단, 모은 열을 <strong>언제·어디에·얼마나</strong> 보낼지 결정하는 시스템이 없으면 효과는 절반만 남습니다.</p></div>
         </div>
       </div>
     </section>
@@ -521,6 +574,10 @@
           <div class="highlight"><p><i class="fa-solid fa-lightbulb" style="margin-right:6px;"></i>4번이 <strong>열을 모으는 배관</strong>이라면, EMS는 그 배관의 <strong>밸브를 실시간으로 여닫는 관제탑</strong>입니다.</p></div>
         </div>
         <div class="col-b">
+          <div class="media" style="height:132px; margin-bottom:12px;">
+            <img src="https://commons.wikimedia.org/wiki/Special:FilePath/Fully_automated_control_room.jpg?width=640" alt="자동화 관제실" loading="lazy" onerror="this.closest('.media').classList.add('img-failed')">
+            <div class="m-cap"><i class="fa-solid fa-desktop"></i>CONTROL ROOM · 실시간 관제가 이뤄지는 곳</div>
+          </div>
           <p class="hint">단계를 클릭하면 상세 설명이 펼쳐집니다</p>
           <div id="emsFlow">
             <div class="flow-v-step open"><div class="flow-v-head"><span class="idx">01</span><strong>계측 · 센서</strong><i class="fa-solid fa-chevron-down chevron"></i></div><div class="flow-v-body"><p>배관 온도, 설비별 전력량을 실시간으로 수집합니다.</p></div></div>
@@ -546,7 +603,7 @@
           <div class="gauge-val"><span class="n" id="gaugeNum">--</span><span class="u">폐열 회수 활용률</span></div>
         </div>
         <div class="dash-right">
-          <div class="chart-box" style="height:120px;"><canvas data-chart="emsLive"></canvas></div>
+          <div class="chart-box" style="height:150px;"><canvas data-chart="emsLive"></canvas></div>
           <div class="dash-readout">
             <div class="readout-tile"><span class="n" id="rPeak">--</span><span class="l">배관 온도(℃)</span></div>
             <div class="readout-tile"><span class="n" id="rLoad">--</span><span class="l">부하 분산 라인</span></div>
@@ -561,11 +618,21 @@
     <section>
       <div class="chip violet"><i class="fa-solid fa-chart-line"></i> SEC.06 · 예측 기반 수요-생산 연동</div>
       <h2 class="section-title">생산 계획이 바뀌면 <span class="accent">에너지도 흔들린다</span></h2>
-      <ul class="ppt-list">
-        <li><div class="icon violet"><i class="fa-solid fa-arrows-spin"></i></div><div class="body"><strong>수시로 바뀌는 생산 스케줄</strong><span>생산량은 시장 수요와 장비 가동률에 따라 자주 조정되고, 그때마다 전력·냉각 수요도 함께 출렁입니다.</span></div></li>
-        <li><div class="icon violet"><i class="fa-solid fa-clock-rotate-left"></i></div><div class="body"><strong>EMS는 "이미 벌어진 일"에 대응할 뿐</strong><span>실시간 제어는 변화가 일어난 다음 반응하는 방식이라, 생산이 갑자기 몰리는 순간의 비효율까지는 막기 어렵습니다.</span></div></li>
-        <li><div class="icon violet"><i class="fa-solid fa-crystal-ball"></i></div><div class="body"><strong>그래서 "미리 안다"가 필요하다</strong><span>수요 예측 기반 생산계획(APS)과 EMS를 연동해 생산이 몰릴 시간대를 미리 계산하고 배분을 사전 조정합니다.</span></div></li>
-      </ul>
+      <div class="two-col">
+        <div class="col-a">
+          <ul class="ppt-list">
+            <li><div class="icon violet"><i class="fa-solid fa-arrows-spin"></i></div><div class="body"><strong>수시로 바뀌는 생산 스케줄</strong><span>생산량은 시장 수요와 장비 가동률에 따라 자주 조정되고, 그때마다 전력·냉각 수요도 함께 출렁입니다.</span></div></li>
+            <li><div class="icon violet"><i class="fa-solid fa-clock-rotate-left"></i></div><div class="body"><strong>EMS는 "이미 벌어진 일"에 대응할 뿐</strong><span>실시간 제어는 변화가 일어난 다음 반응하는 방식이라, 생산이 갑자기 몰리는 순간의 비효율까지는 막기 어렵습니다.</span></div></li>
+            <li><div class="icon violet"><i class="fa-solid fa-crystal-ball"></i></div><div class="body"><strong>그래서 "미리 안다"가 필요하다</strong><span>수요 예측 기반 생산계획(APS)과 EMS를 연동해 생산이 몰릴 시간대를 미리 계산하고 배분을 사전 조정합니다.</span></div></li>
+          </ul>
+        </div>
+        <div class="col-b">
+          <div class="media" style="height:360px;">
+            <img src="https://commons.wikimedia.org/wiki/Special:FilePath/Datacenter_Rack.jpg?width=640" alt="데이터센터 서버랙" loading="lazy" onerror="this.closest('.media').classList.add('img-failed')">
+            <div class="m-cap"><i class="fa-solid fa-server"></i>DATA PIPELINE · 예측 모델이 돌아가는 곳</div>
+          </div>
+        </div>
+      </div>
     </section>
 
     <!-- 12 · 06 예측 구조 + 차트 -->
@@ -688,6 +755,18 @@
         document.querySelectorAll('.orbit-node').forEach(function(n){ n.classList.remove('active'); });
         node.classList.add('active');
         document.getElementById('orbit-detail').innerHTML = detail[node.dataset.i];
+      });
+    });
+  })();
+
+  /* ============ vicious-cycle loop (SEC.00) ============ */
+  (function(){
+    var out=document.getElementById('loopDetail');
+    document.querySelectorAll('#loop1 .loop-node').forEach(function(node){
+      node.addEventListener('click', function(){
+        document.querySelectorAll('#loop1 .loop-node').forEach(function(n){ n.classList.remove('active'); });
+        node.classList.add('active');
+        if(out) out.innerHTML = '<i class="fa-solid fa-circle-arrow-right" style="margin-right:6px;"></i>' + node.dataset.d;
       });
     });
   })();
@@ -890,7 +969,7 @@
 
   themeDefaults();
   Reveal.initialize({
-    hash:true, controls:true, progress:true, center:true,
+    hash:true, controls:true, progress:true, center:false,
     transition:'slide', transitionSpeed:'default', backgroundTransition:'fade',
     slideNumber:'c/t', width:1024, height:768, margin:0.055, minScale:0.2, maxScale:2.0
   }).then(function(){ onSlide(Reveal.getCurrentSlide()); });
