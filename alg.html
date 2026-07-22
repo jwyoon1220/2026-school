@@ -2,14 +2,14 @@
 <html lang="ko">
 <head>
     <meta charset="UTF-8">
-    <title>에란겔 MGRS 정밀 전술지도 (FDC / FO)</title>
+    <title>에란겔 PUBGMap 연동 MGRS 정밀 전술지도</title>
     <style>
         body {
             margin: 0;
             padding: 20px;
-            background-color: #121212;
-            color: #e0e0e0;
-            font-family: 'Consolas', 'Courier New', monospace;
+            background-color: #0d1117;
+            color: #c9d1d9;
+            font-family: 'Segoe UI', 'Consolas', monospace;
             display: flex;
             gap: 20px;
         }
@@ -17,9 +17,11 @@
             position: relative;
             width: 800px;
             height: 800px;
-            border: 2px solid #00ffcc;
-            box-shadow: 0 0 15px rgba(0, 255, 204, 0.3);
-            background-color: #050b14;
+            border: 2px solid #58a6ff;
+            box-shadow: 0 0 20px rgba(88, 166, 255, 0.25);
+            background-color: #010409;
+            overflow: hidden;
+            border-radius: 6px;
         }
         svg {
             width: 100%;
@@ -28,92 +30,98 @@
         }
         #panel {
             flex: 1;
-            background: #1e1e1e;
+            background: #161b22;
             padding: 20px;
             border-radius: 8px;
-            border: 1px solid #333;
-            max-width: 400px;
+            border: 1px solid #30363d;
+            max-width: 380px;
         }
-        h2 { color: #00ffcc; border-bottom: 1px solid #00ffcc; padding-bottom: 8px; margin-top: 0; }
+        h2 { color: #58a6ff; border-bottom: 1px solid #30363d; padding-bottom: 10px; margin-top: 0; font-size: 18px; }
         .data-box {
-            background: #2a2a2a;
+            background: #0d1117;
             padding: 12px;
-            border-radius: 5px;
+            border-radius: 6px;
             margin-bottom: 12px;
-            border-left: 4px solid #00ffcc;
+            border-left: 4px solid #58a6ff;
+            border-top: 1px solid #21262d;
+            border-right: 1px solid #21262d;
+            border-bottom: 1px solid #21262d;
         }
-        .data-title { font-size: 11px; color: #aaa; text-transform: uppercase; }
-        .data-value { font-size: 18px; font-weight: bold; color: #fff; margin-top: 4px; }
+        .data-title { font-size: 11px; color: #8b949e; text-transform: uppercase; font-weight: bold; }
+        .data-value { font-size: 18px; font-weight: bold; color: #f0f6fc; margin-top: 4px; font-family: 'Consolas', monospace; }
         .btn {
-            background: #00ffcc;
-            color: #000;
-            border: none;
+            background: #238636;
+            color: #ffffff;
+            border: 1px solid rgba(240,246,252,0.1);
             padding: 10px 15px;
             font-weight: bold;
             cursor: pointer;
             width: 100%;
-            border-radius: 4px;
+            border-radius: 6px;
             margin-bottom: 10px;
+            transition: 0.2s;
         }
-        .btn:hover { background: #00cca3; }
-        .instruction { font-size: 11px; color: #888; line-height: 1.5; }
+        .btn:hover { background: #2ea043; }
+        .instruction { font-size: 11px; color: #8b949e; line-height: 1.6; background: #0d1117; padding: 10px; border-radius: 6px; border: 1px solid #21262d; }
     </style>
 </head>
 <body>
 
 <div id="map-container">
     <svg id="tactical-map" viewBox="0 0 800 800" xmlns="http://www.w3.org/2000/svg">
-        <!-- Direct High-Res Image Link -->
+        <!-- PUBGMap 기반 에란겔 고해상도 지형 오버레이 -->
         <image id="map-bg" href="https://i.namu.wiki/i/f6asAE-P2PFd6mjvkf4CsiHL124RyIB_GQGpdx5ji2eDI76JdxanQFujfTbrmp_6bkreEaMmOYPs2eShzTc8Fm5RllnZkVIzFEafrcjRE25VPxr7o76OiceMLHmypetDL50Q7qf6E-73jv4fs2tRjw.webp" width="800" height="800" preserveAspectRatio="none"/>
 
-        <!-- 100m Sub-Grid (Minor) -->
-        <g id="sub-grid" stroke="rgba(0, 255, 204, 0.18)" stroke-width="0.5"></g>
+        <!-- 100m Sub-Grid (Minor Grid) -->
+        <g id="sub-grid" stroke="rgba(88, 166, 255, 0.2)" stroke-width="0.5"></g>
 
-        <!-- 1km Major Grid (MGRS) -->
-        <g id="major-grid" stroke="#00ffcc" stroke-width="1.5" opacity="0.75"></g>
+        <!-- 1km Major Grid (MGRS Primary) -->
+        <g id="major-grid" stroke="#58a6ff" stroke-width="1.5" opacity="0.8"></g>
 
-        <!-- Labels (MGRS Axes) -->
-        <g id="grid-labels" fill="#00ffcc" font-size="11" font-weight="bold"></g>
+        <!-- MGRS 축 라벨 (00~07) -->
+        <g id="grid-labels" fill="#58a6ff" font-size="11" font-weight="bold" font-family="Consolas"></g>
 
-        <!-- Overlay Graphics (Mortar Ranges & Targets) -->
+        <!-- 포병 사격 계산 그래픽 레이어 -->
         <g id="artillery-layer"></g>
     </svg>
 </div>
 
 <div id="panel">
-    <h2>🎯 FDC 전술 사격통제반</h2>
+    <h2>🎯 FDC 전술 사격통제반 (PUBGMap)</h2>
 
     <div class="data-box">
-        <div class="data-title">마우스 커서 MGRS 좌표 (8계단)</div>
+        <div class="data-title">커서 MGRS 좌표 (8계단 정밀도)</div>
         <div class="data-value" id="cursor-mgrs">0000 0000</div>
     </div>
 
-    <div class="data-box" style="border-left-color: #ff3366;">
-        <div class="data-title">포병 진지 (Artillery Pos)</div>
-        <div class="data-value" id="art-pos">미설정 (클릭)</div>
+    <div class="data-box" style="border-left-color: #f85149;">
+        <div class="data-title">포병 진지 (ARTILLERY POS)</div>
+        <div class="data-value" id="art-pos" style="color: #ff7b72;">미설정 (좌클릭)</div>
     </div>
 
-    <div class="data-box" style="border-left-color: #ffcc00;">
-        <div class="data-title">표적 위치 (Target Pos)</div>
-        <div class="data-value" id="target-pos">미설정 (Shift+클릭)</div>
+    <div class="data-box" style="border-left-color: #d29922;">
+        <div class="data-title">표적 위치 (TARGET POS)</div>
+        <div class="data-value" id="target-pos" style="color: #e3b341;">미설정 (Shift+클릭)</div>
     </div>
 
-    <div class="data-box" style="border-left-color: #00ffcc;">
+    <div class="data-box" style="border-left-color: #3fb950;">
         <div class="data-title">사격 제원 (FIRE SOLUTION)</div>
-        <div style="margin-top: 8px; font-size: 13px;">
-            <div>방위각 (Azimuth): <span id="fire-azimuth" style="color:#00ffcc; font-weight:bold;">-</span></div>
-            <div>사거리 (Distance): <span id="fire-dist" style="color:#00ffcc; font-weight:bold;">-</span></div>
+        <div style="margin-top: 8px; font-size: 13px; font-family: 'Consolas', monospace;">
+            <div>방위각 (Azimuth): <span id="fire-azimuth" style="color:#58a6ff; font-weight:bold;">-</span></div>
+            <div>사거리 (Distance): <span id="fire-dist" style="color:#58a6ff; font-weight:bold;">-</span></div>
             <div>사격 판정: <span id="fire-status" style="font-weight:bold;">-</span></div>
         </div>
     </div>
 
-    <button class="btn" onclick="resetMap()">지도 그래픽 초기화</button>
+    <button class="btn" onclick="resetMap()">지도 오버레이 초기화</button>
 
     <div class="instruction">
-        <b>[사용법]</b><br>
-        1. <b>좌클릭:</b> 포병 진지 설정 (Red: <121m / Green: 121~700m)<br>
-        2. <b>Shift + 좌클릭:</b> 표적 설정 (방위각/거리 자동 계산)<br>
-        3. <b>Grid:</b> 주격자 1칸 = 1km / 세부격자 = 100m
+        <b>[MGRS & 박격포 운용 교리]</b><br>
+        • <b>좌클릭:</b> 포병 진지 설정<br>
+        • <b>Shift + 좌클릭:</b> 관측반(FO) 표적 지정<br>
+        • 🔴 <b>Red Circle:</b> 최소 사거리 (121m 미만 사격 불가)<br>
+        • 🟢 <b>Green Circle:</b> 박격포 유효 사거리 (121m ~ 700m)<br>
+        • <b>주격자(1km) / 보조격자(100m) / MGRS 8계단(10m)</b>
     </div>
 </div>
 
@@ -127,13 +135,13 @@
     let artPoint = null;
     let targetPoint = null;
 
-    // Grid Rendering
+    // 1km 및 100m 격자망 생성
     function initGrid() {
         let subHtml = '';
         let majorHtml = '';
         let labelHtml = '';
 
-        // Sub-grid (100m = 10px)
+        // 100m 격자 (10px 단위)
         for (let i = 0; i <= 800; i += 10) {
             if (i % 100 !== 0) {
                 subHtml += `<line x1="${i}" y1="0" x2="${i}" y2="800" />`;
@@ -142,7 +150,7 @@
         }
         subGrid.innerHTML = subHtml;
 
-        // Major-grid (1km = 100px)
+        // 1km 주격자 (100px 단위)
         for (let i = 0; i <= 800; i += 100) {
             majorHtml += `<line x1="${i}" y1="0" x2="${i}" y2="800" />`;
             majorHtml += `<line x1="0" y1="${i}" x2="800" y2="${i}" />`;
@@ -157,6 +165,7 @@
         gridLabels.innerHTML = labelHtml;
     }
 
+    // 픽셀 좌표 -> MGRS 8계단 변환 (우상탄 교리 적용)
     function pxToMGRS(x, y) {
         let easting = Math.floor(x * 10).toString().padStart(4, '0');
         let northing = Math.floor((800 - y) * 10).toString().padStart(4, '0');
@@ -190,22 +199,22 @@
 
         if (artPoint) {
             // 최소 사거리 121m = 12.1px
-            html += `<circle cx="${artPoint.x}" cy="${artPoint.y}" r="12.1" fill="rgba(255, 0, 0, 0.25)" stroke="red" stroke-width="1.5"/>`;
+            html += `<circle cx="${artPoint.x}" cy="${artPoint.y}" r="12.1" fill="rgba(248, 81, 73, 0.25)" stroke="#f85149" stroke-width="1.5"/>`;
             // 최대 사거리 700m = 70px
-            html += `<circle cx="${artPoint.x}" cy="${artPoint.y}" r="70" fill="rgba(0, 255, 204, 0.12)" stroke="#00ffcc" stroke-width="1.5" stroke-dasharray="4,4"/>`;
+            html += `<circle cx="${artPoint.x}" cy="${artPoint.y}" r="70" fill="rgba(56, 139, 253, 0.12)" stroke="#58a6ff" stroke-width="1.5" stroke-dasharray="4,4"/>`;
             // 포병 마커
-            html += `<circle cx="${artPoint.x}" cy="${artPoint.y}" r="5" fill="#ff3366" stroke="#fff" stroke-width="1"/>`;
+            html += `<circle cx="${artPoint.x}" cy="${artPoint.y}" r="5" fill="#f85149" stroke="#ffffff" stroke-width="1.5"/>`;
         }
 
         if (targetPoint) {
-            html += `<circle cx="${targetPoint.x}" cy="${targetPoint.y}" r="5" fill="#ffcc00" stroke="#fff" stroke-width="1"/>`;
+            html += `<circle cx="${targetPoint.x}" cy="${targetPoint.y}" r="5" fill="#d29922" stroke="#ffffff" stroke-width="1.5"/>`;
         }
 
         if (artPoint && targetPoint) {
-            html += `<line x1="${artPoint.x}" y1="${artPoint.y}" x2="${targetPoint.x}" y2="${targetPoint.y}" stroke="#ffcc00" stroke-width="2" stroke-dasharray="2,2"/>`;
+            html += `<line x1="${artPoint.x}" y1="${artPoint.y}" x2="${targetPoint.x}" y2="${targetPoint.y}" stroke="#d29922" stroke-width="2" stroke-dasharray="3,3"/>`;
 
             let dx = (targetPoint.x - artPoint.x) * 10;
-            let dy = (artPoint.y - targetPoint.y) * 10;
+            let dy = (artPoint.y - targetPoint.y) * 10; // SVG Y축 반전 보정
 
             let dist = Math.sqrt(dx * dx + dy * dy);
             let angle = Math.atan2(dx, dy) * (180 / Math.PI);
@@ -217,13 +226,13 @@
             let statusEle = document.getElementById('fire-status');
             if (dist < 121) {
                 statusEle.innerText = "❌ 사거리 미달 (< 121m)";
-                statusEle.style.color = "#ff4444";
+                statusEle.style.color = "#f85149";
             } else if (dist > 700) {
                 statusEle.innerText = "❌ 사거리 초과 (> 700m)";
-                statusEle.style.color = "#ff4444";
+                statusEle.style.color = "#f85149";
             } else {
                 statusEle.innerText = "✅ 사격 가능 (IN RANGE)";
-                statusEle.style.color = "#00ffcc";
+                statusEle.style.color = "#3fb950";
             }
         }
 
@@ -234,7 +243,7 @@
         artPoint = null;
         targetPoint = null;
         artLayer.innerHTML = '';
-        document.getElementById('art-pos').innerText = "미설정 (클릭)";
+        document.getElementById('art-pos').innerText = "미설정 (좌클릭)";
         document.getElementById('target-pos').innerText = "미설정 (Shift+클릭)";
         document.getElementById('fire-azimuth').innerText = "-";
         document.getElementById('fire-dist').innerText = "-";
