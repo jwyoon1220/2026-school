@@ -2,126 +2,151 @@
 <html lang="ko">
 <head>
     <meta charset="UTF-8">
-    <title>에란겔 PUBGMap 연동 MGRS 정밀 전술지도</title>
+    <title>에란겔 Full-Screen 전술 측량 지도</title>
     <style>
-        body {
-            margin: 0;
-            padding: 20px;
-            background-color: #0d1117;
-            color: #c9d1d9;
-            font-family: 'Segoe UI', 'Consolas', monospace;
-            display: flex;
-            gap: 20px;
-        }
-        #map-container {
-            position: relative;
-            width: 800px;
-            height: 800px;
-            border: 2px solid #58a6ff;
-            box-shadow: 0 0 20px rgba(88, 166, 255, 0.25);
-            background-color: #010409;
+        * { box-sizing: border-box; margin: 0; padding: 0; }
+        body, html {
+            width: 100%; height: 100%;
             overflow: hidden;
-            border-radius: 6px;
+            background-color: #050b14;
+            font-family: 'Consolas', 'Segoe UI', monospace;
+            color: #00ffcc;
         }
+
+        /* Fullscreen Map Container */
+        #map-container {
+            position: absolute;
+            top: 0; left: 0;
+            width: 100vw; height: 100vh;
+            display: flex; justify-content: center; align-items: center;
+        }
+
         svg {
-            width: 100%;
-            height: 100%;
+            width: 100%; height: 100%;
             cursor: crosshair;
         }
-        #panel {
-            flex: 1;
-            background: #161b22;
-            padding: 20px;
+
+        /* Top Compass Rose & North Indicator */
+        #top-bar {
+            position: absolute;
+            top: 15px; left: 50%;
+            transform: translateX(-50%);
+            background: rgba(13, 17, 23, 0.85);
+            border: 1px solid #00ffcc;
+            padding: 8px 25px;
+            border-radius: 20px;
+            display: flex; align-items: center; gap: 20px;
+            box-shadow: 0 0 15px rgba(0, 255, 204, 0.2);
+            pointer-events: none;
+            z-index: 10;
+        }
+        .compass-dial {
+            font-weight: bold; font-size: 14px; letter-spacing: 2px;
+        }
+
+        /* Bottom Status & Measurement Panel */
+        #bottom-bar {
+            position: absolute;
+            bottom: 20px; left: 50%;
+            transform: translateX(-50%);
+            width: 90%; max-width: 1000px;
+            background: rgba(13, 17, 23, 0.9);
+            border: 1px solid #00ffcc;
             border-radius: 8px;
-            border: 1px solid #30363d;
-            max-width: 380px;
+            padding: 12px 20px;
+            display: flex; justify-content: space-between; align-items: center;
+            box-shadow: 0 0 20px rgba(0, 0, 0, 0.8);
+            z-index: 10;
         }
-        h2 { color: #58a6ff; border-bottom: 1px solid #30363d; padding-bottom: 10px; margin-top: 0; font-size: 18px; }
-        .data-box {
-            background: #0d1117;
-            padding: 12px;
-            border-radius: 6px;
-            margin-bottom: 12px;
-            border-left: 4px solid #58a6ff;
-            border-top: 1px solid #21262d;
-            border-right: 1px solid #21262d;
-            border-bottom: 1px solid #21262d;
+
+        .data-group { display: flex; gap: 25px; align-items: center; }
+        .data-item { display: flex; flex-direction: column; }
+        .data-label { font-size: 10px; color: #888; text-transform: uppercase; }
+        .data-val { font-size: 16px; font-weight: bold; color: #fff; }
+
+        /* Scale Bar UI */
+        .scale-container { display: flex; flex-direction: column; align-items: flex-end; }
+        .scale-bar {
+            width: 100px; height: 6px;
+            border: 1px solid #00ffcc; border-top: none;
+            margin-bottom: 4px; position: relative;
         }
-        .data-title { font-size: 11px; color: #8b949e; text-transform: uppercase; font-weight: bold; }
-        .data-value { font-size: 18px; font-weight: bold; color: #f0f6fc; margin-top: 4px; font-family: 'Consolas', monospace; }
-        .btn {
-            background: #238636;
-            color: #ffffff;
-            border: 1px solid rgba(240,246,252,0.1);
-            padding: 10px 15px;
-            font-weight: bold;
-            cursor: pointer;
-            width: 100%;
-            border-radius: 6px;
-            margin-bottom: 10px;
-            transition: 0.2s;
+        .scale-bar::before {
+            content: ''; position: absolute; left: 50%; top: 0;
+            width: 1px; height: 100%; background: #00ffcc;
         }
-        .btn:hover { background: #2ea043; }
-        .instruction { font-size: 11px; color: #8b949e; line-height: 1.6; background: #0d1117; padding: 10px; border-radius: 6px; border: 1px solid #21262d; }
+        .scale-text { font-size: 11px; color: #00ffcc; }
+
+        /* Reset Floating Button */
+        #reset-btn {
+            position: absolute; top: 15px; right: 20px;
+            background: rgba(255, 51, 102, 0.2);
+            border: 1px solid #ff3366; color: #ff3366;
+            padding: 8px 15px; border-radius: 4px;
+            font-weight: bold; cursor: pointer; z-index: 10;
+        }
+        #reset-btn:hover { background: #ff3366; color: #fff; }
     </style>
 </head>
 <body>
 
+<div id="top-bar">
+    <div class="compass-dial">W ◄─── N (360° / 0mils) ───► E</div>
+</div>
+
+<button id="reset-btn" onclick="resetPoints()">측정 초기화</button>
+
 <div id="map-container">
-    <svg id="tactical-map" viewBox="0 0 800 800" xmlns="http://www.w3.org/2000/svg">
-        <!-- PUBGMap 기반 에란겔 고해상도 지형 오버레이 -->
+    <svg id="tactical-map" viewBox="0 0 800 800" xmlns="http://www.w3.org/2000/svg" preserveAspectRatio="xMidYMid slice">
+        <!-- Erangel Map Background -->
         <image id="map-bg" href="https://i.namu.wiki/i/f6asAE-P2PFd6mjvkf4CsiHL124RyIB_GQGpdx5ji2eDI76JdxanQFujfTbrmp_6bkreEaMmOYPs2eShzTc8Fm5RllnZkVIzFEafrcjRE25VPxr7o76OiceMLHmypetDL50Q7qf6E-73jv4fs2tRjw.webp" width="800" height="800" preserveAspectRatio="none"/>
 
-        <!-- 100m Sub-Grid (Minor Grid) -->
-        <g id="sub-grid" stroke="rgba(88, 166, 255, 0.2)" stroke-width="0.5"></g>
+        <!-- 100m Sub-Grid -->
+        <g id="sub-grid" stroke="rgba(0, 255, 204, 0.15)" stroke-width="0.5"></g>
 
-        <!-- 1km Major Grid (MGRS Primary) -->
-        <g id="major-grid" stroke="#58a6ff" stroke-width="1.5" opacity="0.8"></g>
+        <!-- 1km Major Grid (MGRS) -->
+        <g id="major-grid" stroke="#00ffcc" stroke-width="1.2" opacity="0.6"></g>
 
-        <!-- MGRS 축 라벨 (00~07) -->
-        <g id="grid-labels" fill="#58a6ff" font-size="11" font-weight="bold" font-family="Consolas"></g>
+        <!-- MGRS Grid Labels -->
+        <g id="grid-labels" fill="#00ffcc" font-size="10" font-weight="bold"></g>
 
-        <!-- 포병 사격 계산 그래픽 레이어 -->
-        <g id="artillery-layer"></g>
+        <!-- Measurement Graphics Layer -->
+        <g id="measure-layer"></g>
     </svg>
 </div>
 
-<div id="panel">
-    <h2>🎯 FDC 전술 사격통제반 (PUBGMap)</h2>
-
-    <div class="data-box">
-        <div class="data-title">커서 MGRS 좌표 (8계단 정밀도)</div>
-        <div class="data-value" id="cursor-mgrs">0000 0000</div>
-    </div>
-
-    <div class="data-box" style="border-left-color: #f85149;">
-        <div class="data-title">포병 진지 (ARTILLERY POS)</div>
-        <div class="data-value" id="art-pos" style="color: #ff7b72;">미설정 (좌클릭)</div>
-    </div>
-
-    <div class="data-box" style="border-left-color: #d29922;">
-        <div class="data-title">표적 위치 (TARGET POS)</div>
-        <div class="data-value" id="target-pos" style="color: #e3b341;">미설정 (Shift+클릭)</div>
-    </div>
-
-    <div class="data-box" style="border-left-color: #3fb950;">
-        <div class="data-title">사격 제원 (FIRE SOLUTION)</div>
-        <div style="margin-top: 8px; font-size: 13px; font-family: 'Consolas', monospace;">
-            <div>방위각 (Azimuth): <span id="fire-azimuth" style="color:#58a6ff; font-weight:bold;">-</span></div>
-            <div>사거리 (Distance): <span id="fire-dist" style="color:#58a6ff; font-weight:bold;">-</span></div>
-            <div>사격 판정: <span id="fire-status" style="font-weight:bold;">-</span></div>
+<div id="bottom-bar">
+    <div class="data-group">
+        <div class="data-item">
+            <span class="data-label">커서 좌표 (MGRS 8계단)</span>
+            <span class="data-val" id="cursor-pos" style="color: #00ffcc;">0000 0000</span>
+        </div>
+        <div class="data-item">
+            <span class="data-label">A 지점</span>
+            <span class="data-val" id="pt-a">미지정</span>
+        </div>
+        <div class="data-item">
+            <span class="data-label">B 지점</span>
+            <span class="data-val" id="pt-b">미지정</span>
+        </div>
+        <div class="data-item">
+            <span class="data-label">직선 거리</span>
+            <span class="data-val" id="calc-dist" style="color: #ffcc00;">-</span>
+        </div>
+        <div class="data-item">
+            <span class="data-label">방위각</span>
+            <span class="data-val" id="calc-azimuth" style="color: #ffcc00;">-</span>
+        </div>
+        <div class="data-item">
+            <span class="data-label">고도차 / 경사</span>
+            <span class="data-val" id="calc-elevation" style="color: #ff3366;">-</span>
         </div>
     </div>
 
-    <button class="btn" onclick="resetMap()">지도 오버레이 초기화</button>
-
-    <div class="instruction">
-        <b>[MGRS & 박격포 운용 교리]</b><br>
-        • <b>좌클릭:</b> 포병 진지 설정<br>
-        • <b>Shift + 좌클릭:</b> 관측반(FO) 표적 지정<br>
-        • 🔴 <b>Red Circle:</b> 최소 사거리 (121m 미만 사격 불가)<br>
-        • 🟢 <b>Green Circle:</b> 박격포 유효 사거리 (121m ~ 700m)<br>
-        • <b>주격자(1km) / 보조격자(100m) / MGRS 8계단(10m)</b>
+    <!-- Scale Bar -->
+    <div class="scale-container">
+        <div class="scale-bar"></div>
+        <div class="scale-text">1 km (주격자 1칸)</div>
     </div>
 </div>
 
@@ -130,18 +155,17 @@
     const majorGrid = document.getElementById('major-grid');
     const subGrid = document.getElementById('sub-grid');
     const gridLabels = document.getElementById('grid-labels');
-    const artLayer = document.getElementById('artillery-layer');
+    const measureLayer = document.getElementById('measure-layer');
 
-    let artPoint = null;
-    let targetPoint = null;
+    let pointA = null;
+    let pointB = null;
 
-    // 1km 및 100m 격자망 생성
+    // Grid Initialization
     function initGrid() {
         let subHtml = '';
         let majorHtml = '';
         let labelHtml = '';
 
-        // 100m 격자 (10px 단위)
         for (let i = 0; i <= 800; i += 10) {
             if (i % 100 !== 0) {
                 subHtml += `<line x1="${i}" y1="0" x2="${i}" y2="800" />`;
@@ -150,7 +174,6 @@
         }
         subGrid.innerHTML = subHtml;
 
-        // 1km 주격자 (100px 단위)
         for (let i = 0; i <= 800; i += 100) {
             majorHtml += `<line x1="${i}" y1="0" x2="${i}" y2="800" />`;
             majorHtml += `<line x1="0" y1="${i}" x2="800" y2="${i}" />`;
@@ -165,89 +188,111 @@
         gridLabels.innerHTML = labelHtml;
     }
 
-    // 픽셀 좌표 -> MGRS 8계단 변환 (우상탄 교리 적용)
+    // Convert SVG Coordinates to MGRS
     function pxToMGRS(x, y) {
         let easting = Math.floor(x * 10).toString().padStart(4, '0');
         let northing = Math.floor((800 - y) * 10).toString().padStart(4, '0');
         return `${easting} ${northing}`;
     }
 
+    // Estimate Terrain Altitude (Simulated Topographic Profile for Erangel)
+    function estimateAltitude(x, y) {
+        // High altitude zones: Stalber, Sosnovka Mountain, Rozhok Hills
+        let distStalber = Math.hypot(x - 650, y - 150);
+        let distMiliHill = Math.hypot(x - 500, y - 700);
+        let distGatkaPlains = Math.hypot(x - 250, y - 450);
+
+        let alt = 15; // Sea-level baseline
+        if (distStalber < 150) alt += (150 - distStalber) * 1.8;
+        if (distMiliHill < 120) alt += (120 - distMiliHill) * 1.4;
+        if (distGatkaPlains < 100) alt -= 10;
+
+        return Math.max(2, Math.round(alt));
+    }
+
+    // Mouse Move Event
     svg.addEventListener('mousemove', (e) => {
         const rect = svg.getBoundingClientRect();
         const x = (e.clientX - rect.left) * (800 / rect.width);
         const y = (e.clientY - rect.top) * (800 / rect.height);
-        document.getElementById('cursor-mgrs').innerText = pxToMGRS(x, y);
+        document.getElementById('cursor-pos').innerText = pxToMGRS(x, y);
     });
 
+    // Click Event to Pick Points
     svg.addEventListener('click', (e) => {
         const rect = svg.getBoundingClientRect();
         const x = (e.clientX - rect.left) * (800 / rect.width);
         const y = (e.clientY - rect.top) * (800 / rect.height);
 
-        if (e.shiftKey) {
-            targetPoint = { x, y, mgrs: pxToMGRS(x, y) };
-            document.getElementById('target-pos').innerText = targetPoint.mgrs;
+        if (!pointA) {
+            pointA = { x, y, mgrs: pxToMGRS(x, y), alt: estimateAltitude(x, y) };
+            document.getElementById('pt-a').innerText = pointA.mgrs;
+        } else if (!pointB) {
+            pointB = { x, y, mgrs: pxToMGRS(x, y), alt: estimateAltitude(x, y) };
+            document.getElementById('pt-b').innerText = pointB.mgrs;
         } else {
-            artPoint = { x, y, mgrs: pxToMGRS(x, y) };
-            document.getElementById('art-pos').innerText = artPoint.mgrs;
+            // Re-select A
+            pointA = { x, y, mgrs: pxToMGRS(x, y), alt: estimateAltitude(x, y) };
+            pointB = null;
+            document.getElementById('pt-a').innerText = pointA.mgrs;
+            document.getElementById('pt-b').innerText = "미지정";
         }
-        updateGraphics();
+        updateMeasurement();
     });
 
-    function updateGraphics() {
+    // Update Measurement Calculations & Overlay Render
+    function updateMeasurement() {
         let html = '';
 
-        if (artPoint) {
-            // 최소 사거리 121m = 12.1px
-            html += `<circle cx="${artPoint.x}" cy="${artPoint.y}" r="12.1" fill="rgba(248, 81, 73, 0.25)" stroke="#f85149" stroke-width="1.5"/>`;
-            // 최대 사거리 700m = 70px
-            html += `<circle cx="${artPoint.x}" cy="${artPoint.y}" r="70" fill="rgba(56, 139, 253, 0.12)" stroke="#58a6ff" stroke-width="1.5" stroke-dasharray="4,4"/>`;
-            // 포병 마커
-            html += `<circle cx="${artPoint.x}" cy="${artPoint.y}" r="5" fill="#f85149" stroke="#ffffff" stroke-width="1.5"/>`;
+        if (pointA) {
+            html += `<circle cx="${pointA.x}" cy="${pointA.y}" r="6" fill="#00ffcc" stroke="#ffffff" stroke-width="1.5"/>`;
+            html += `<text x="${pointA.x + 8}" y="${pointA.y - 8}" fill="#00ffcc" font-size="12" font-weight="bold">A (${pointA.alt}m)</text>`;
         }
 
-        if (targetPoint) {
-            html += `<circle cx="${targetPoint.x}" cy="${targetPoint.y}" r="5" fill="#d29922" stroke="#ffffff" stroke-width="1.5"/>`;
+        if (pointB) {
+            html += `<circle cx="${pointB.x}" cy="${pointB.y}" r="6" fill="#ffcc00" stroke="#ffffff" stroke-width="1.5"/>`;
+            html += `<text x="${pointB.x + 8}" y="${pointB.y - 8}" fill="#ffcc00" font-size="12" font-weight="bold">B (${pointB.alt}m)</text>`;
         }
 
-        if (artPoint && targetPoint) {
-            html += `<line x1="${artPoint.x}" y1="${artPoint.y}" x2="${targetPoint.x}" y2="${targetPoint.y}" stroke="#d29922" stroke-width="2" stroke-dasharray="3,3"/>`;
+        if (pointA && pointB) {
+            // Distance Line
+            html += `<line x1="${pointA.x}" y1="${pointA.y}" x2="${pointB.x}" y2="${pointB.y}" stroke="#ffcc00" stroke-width="2" stroke-dasharray="4,4"/>`;
 
-            let dx = (targetPoint.x - artPoint.x) * 10;
-            let dy = (artPoint.y - targetPoint.y) * 10; // SVG Y축 반전 보정
+            let dx = (pointB.x - pointA.x) * 10;
+            let dy = (pointA.y - pointB.y) * 10; // Invert SVG Y-axis
 
-            let dist = Math.sqrt(dx * dx + dy * dy);
+            let dist2D = Math.sqrt(dx * dx + dy * dy);
+            let dAlt = pointB.alt - pointA.alt;
+            let dist3D = Math.sqrt(dist2D * dist2D + dAlt * dAlt);
+
             let angle = Math.atan2(dx, dy) * (180 / Math.PI);
             if (angle < 0) angle += 360;
 
-            document.getElementById('fire-azimuth').innerText = `${angle.toFixed(1)}°`;
-            document.getElementById('fire-dist').innerText = `${dist.toFixed(0)}m`;
+            let slope = (dAlt / dist2D) * 100;
 
-            let statusEle = document.getElementById('fire-status');
-            if (dist < 121) {
-                statusEle.innerText = "❌ 사거리 미달 (< 121m)";
-                statusEle.style.color = "#f85149";
-            } else if (dist > 700) {
-                statusEle.innerText = "❌ 사거리 초과 (> 700m)";
-                statusEle.style.color = "#f85149";
-            } else {
-                statusEle.innerText = "✅ 사격 가능 (IN RANGE)";
-                statusEle.style.color = "#3fb950";
-            }
+            document.getElementById('calc-dist').innerText = `${dist3D.toFixed(0)}m`;
+            document.getElementById('calc-azimuth').innerText = `${angle.toFixed(1)}°`;
+            
+            let elevationText = `${dAlt >= 0 ? '+' : ''}${dAlt}m (${slope.toFixed(1)}%)`;
+            document.getElementById('calc-elevation').innerText = elevationText;
+        } else {
+            document.getElementById('calc-dist').innerText = "-";
+            document.getElementById('calc-azimuth').innerText = "-";
+            document.getElementById('calc-elevation').innerText = "-";
         }
 
-        artLayer.innerHTML = html;
+        measureLayer.innerHTML = html;
     }
 
-    function resetMap() {
-        artPoint = null;
-        targetPoint = null;
-        artLayer.innerHTML = '';
-        document.getElementById('art-pos').innerText = "미설정 (좌클릭)";
-        document.getElementById('target-pos').innerText = "미설정 (Shift+클릭)";
-        document.getElementById('fire-azimuth').innerText = "-";
-        document.getElementById('fire-dist').innerText = "-";
-        document.getElementById('fire-status').innerText = "-";
+    function resetPoints() {
+        pointA = null;
+        pointB = null;
+        measureLayer.innerHTML = '';
+        document.getElementById('pt-a').innerText = "미지정";
+        document.getElementById('pt-b').innerText = "미지정";
+        document.getElementById('calc-dist').innerText = "-";
+        document.getElementById('calc-azimuth').innerText = "-";
+        document.getElementById('calc-elevation').innerText = "-";
     }
 
     initGrid();
