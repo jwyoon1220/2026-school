@@ -82,15 +82,27 @@
         }
         .scale-text { font-size: 11px; color: #00ffcc; }
 
-        /* Reset Floating Button */
-        #reset-btn {
+        /* Top-right floating buttons */
+        #top-right-controls {
             position: absolute; top: 15px; right: 20px;
+            display: flex; gap: 10px; z-index: 10;
+        }
+        #reset-btn {
             background: rgba(255, 51, 102, 0.2);
             border: 1px solid #ff3366; color: #ff3366;
             padding: 8px 15px; border-radius: 4px;
-            font-weight: bold; cursor: pointer; z-index: 10;
+            font-weight: bold; cursor: pointer;
         }
         #reset-btn:hover { background: #ff3366; color: #fff; }
+
+        #contour-toggle {
+            background: rgba(255, 178, 102, 0.15);
+            border: 1px solid #ffb266; color: #ffb266;
+            padding: 8px 15px; border-radius: 4px;
+            font-weight: bold; cursor: pointer;
+        }
+        #contour-toggle:hover { background: #ffb266; color: #050b14; }
+        #contour-toggle.off { opacity: 0.5; }
 
         /* Zoom Controls */
         #zoom-controls {
@@ -117,7 +129,10 @@
     <div class="hint-text">휠: 확대/축소 · 드래그: 이동 · 클릭: 좌표 찍기(A→B)</div>
 </div>
 
-<button id="reset-btn" onclick="resetPoints()">측정 초기화</button>
+<div id="top-right-controls">
+    <button id="contour-toggle" onclick="toggleContours()">등고선 숨기기</button>
+    <button id="reset-btn" onclick="resetPoints()">측정 초기화</button>
+</div>
 
 <div id="zoom-controls">
     <button id="zoom-in" title="확대">+</button>
@@ -129,6 +144,10 @@
     <svg id="tactical-map" viewBox="0 0 800 800" xmlns="http://www.w3.org/2000/svg" preserveAspectRatio="xMidYMid slice">
         <!-- Erangel Map Background -->
         <image id="map-bg" href="https://i.namu.wiki/i/f6asAE-P2PFd6mjvkf4CsiHL124RyIB_GQGpdx5ji2eDI76JdxanQFujfTbrmp_6bkreEaMmOYPs2eShzTc8Fm5RllnZkVIzFEafrcjRE25VPxr7o76OiceMLHmypetDL50Q7qf6E-73jv4fs2tRjw.webp" width="800" height="800" preserveAspectRatio="none"/>
+
+        <!-- Contour Lines (derived from the simulated altitude model) -->
+        <g id="contour-layer" fill="none" stroke="rgba(255, 178, 102, 0.35)"></g>
+        <g id="contour-index-layer" fill="rgba(255, 210, 160, 0.9)" stroke="rgba(255, 178, 102, 0.8)" font-weight="bold" text-anchor="middle"></g>
 
         <!-- 100m Fine Reference Mesh (always visible) -->
         <g id="sub-grid" stroke="rgba(0, 255, 204, 0.15)" stroke-width="0.5"></g>
@@ -189,9 +208,14 @@
     const subGrid = document.getElementById('sub-grid');
     const gridLabels = document.getElementById('grid-labels');
     const measureLayer = document.getElementById('measure-layer');
+    const contourLayer = document.getElementById('contour-layer');
+    const contourIndexLayer = document.getElementById('contour-index-layer');
+    const contourToggleBtn = document.getElementById('contour-toggle');
     const gridStepEl = document.getElementById('grid-step');
     const scaleTextEl = document.getElementById('scale-text');
     const scaleBarEl = document.getElementById('scale-bar');
+
+    let contoursVisible = true;
 
     const WORLD = 800;           // full map extent in SVG world units
     const MIN_VB = WORLD / 16;   // deepest zoom-in (scale 16x)
@@ -271,19 +295,63 @@
         return `${easting} ${northing}`;
     }
 
+    // Simulated Topographic Profile for Erangel: two radial hills + one depressed plateau
+    const BASE_ALT = 15; // Sea-level baseline
+    const HILLS = [
+        { name: 'Stalber',   cx: 650, cy: 150, maxR: 150, rate: 1.8 },
+        { name: 'Mili Hill', cx: 500, cy: 700, maxR: 120, rate: 1.4 }
+    ];
+    const PLATEAU = { cx: 250, cy: 450, r: 100, drop: 10 };
+    const CONTOUR_INTERVAL = 20; // meters between contour lines
+    const INDEX_INTERVAL = 100;  // meters between bold, labeled "index" contours
+
     // Estimate Terrain Altitude (Simulated Topographic Profile for Erangel)
     function estimateAltitude(x, y) {
-        // High altitude zones: Stalber, Sosnovka Mountain, Rozhok Hills
-        let distStalber = Math.hypot(x - 650, y - 150);
-        let distMiliHill = Math.hypot(x - 500, y - 700);
-        let distGatkaPlains = Math.hypot(x - 250, y - 450);
-
-        let alt = 15; // Sea-level baseline
-        if (distStalber < 150) alt += (150 - distStalber) * 1.8;
-        if (distMiliHill < 120) alt += (120 - distMiliHill) * 1.4;
-        if (distGatkaPlains < 100) alt -= 10;
+        let alt = BASE_ALT;
+        HILLS.forEach(h => {
+            const d = Math.hypot(x - h.cx, y - h.cy);
+            if (d < h.maxR) alt += (h.maxR - d) * h.rate;
+        });
+        if (Math.hypot(x - PLATEAU.cx, y - PLATEAU.cy) < PLATEAU.r) alt -= PLATEAU.drop;
 
         return Math.max(2, Math.round(alt));
+    }
+
+    // Build contour rings analytically from the altitude model above (each hill's
+    // altitude is purely radial, so a contour at a given elevation is an exact circle)
+    function buildContours() {
+        let normalHtml = '';
+        let indexHtml = '';
+
+        HILLS.forEach(hill => {
+            const peakAlt = BASE_ALT + hill.maxR * hill.rate;
+            const startLevel = Math.ceil((BASE_ALT + 1) / CONTOUR_INTERVAL) * CONTOUR_INTERVAL;
+            for (let level = startLevel; level < peakAlt; level += CONTOUR_INTERVAL) {
+                const d = hill.maxR - (level - BASE_ALT) / hill.rate;
+                if (d <= 0 || d > hill.maxR) continue;
+                if (level % INDEX_INTERVAL === 0) {
+                    indexHtml += `<circle cx="${hill.cx}" cy="${hill.cy}" r="${d.toFixed(2)}" fill="none"/>`;
+                    indexHtml += `<text x="${hill.cx}" y="${(hill.cy - d + 3).toFixed(2)}">${level}m</text>`;
+                } else {
+                    normalHtml += `<circle cx="${hill.cx}" cy="${hill.cy}" r="${d.toFixed(2)}"/>`;
+                }
+            }
+        });
+
+        // Gatka Plains: a flat depressed area, shown as a single dashed boundary
+        indexHtml += `<circle cx="${PLATEAU.cx}" cy="${PLATEAU.cy}" r="${PLATEAU.r}" fill="none" stroke-dasharray="6,4"/>`;
+        indexHtml += `<text x="${PLATEAU.cx}" y="${PLATEAU.cy - PLATEAU.r + 3}">${BASE_ALT - PLATEAU.drop}m</text>`;
+
+        contourLayer.innerHTML = normalHtml;
+        contourIndexLayer.innerHTML = indexHtml;
+    }
+
+    function toggleContours() {
+        contoursVisible = !contoursVisible;
+        contourLayer.style.display = contoursVisible ? '' : 'none';
+        contourIndexLayer.style.display = contoursVisible ? '' : 'none';
+        contourToggleBtn.innerText = contoursVisible ? '등고선 숨기기' : '등고선 표시';
+        contourToggleBtn.classList.toggle('off', !contoursVisible);
     }
 
     // Screen (client) px -> World (SVG) coordinates, honoring current viewBox
@@ -312,6 +380,9 @@
         majorGrid.setAttribute('stroke-width', (1.2 * k).toFixed(3));
         subGrid.setAttribute('stroke-width', (0.5 * k).toFixed(3));
         gridLabels.setAttribute('font-size', (10 * k).toFixed(2));
+        contourLayer.setAttribute('stroke-width', (1 * k).toFixed(3));
+        contourIndexLayer.setAttribute('stroke-width', (1.6 * k).toFixed(3));
+        contourIndexLayer.setAttribute('font-size', (9 * k).toFixed(2));
 
         const step = getGridStep(vb.w);
         if (step !== currentStep) rebuildMajorGrid(step);
@@ -485,6 +556,7 @@
     }
 
     initSubGrid();
+    buildContours();
     applyViewBox();
 </script>
 </body>
