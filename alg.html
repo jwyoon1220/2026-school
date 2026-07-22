@@ -19,7 +19,7 @@
             height: 800px;
             border: 2px solid #00ffcc;
             box-shadow: 0 0 15px rgba(0, 255, 204, 0.3);
-            background-color: #000;
+            background-color: #050b14;
         }
         svg {
             width: 100%;
@@ -39,11 +39,11 @@
             background: #2a2a2a;
             padding: 12px;
             border-radius: 5px;
-            margin-bottom: 15px;
+            margin-bottom: 12px;
             border-left: 4px solid #00ffcc;
         }
-        .data-title { font-size: 12px; color: #aaa; text-transform: uppercase; }
-        .data-value { font-size: 20px; font-weight: bold; color: #fff; margin-top: 4px; }
+        .data-title { font-size: 11px; color: #aaa; text-transform: uppercase; }
+        .data-value { font-size: 18px; font-weight: bold; color: #fff; margin-top: 4px; }
         .btn {
             background: #00ffcc;
             color: #000;
@@ -56,23 +56,21 @@
             margin-bottom: 10px;
         }
         .btn:hover { background: #00cca3; }
-        .instruction { font-size: 12px; color: #888; line-height: 1.5; }
+        .instruction { font-size: 11px; color: #888; line-height: 1.5; }
     </style>
 </head>
 <body>
 
 <div id="map-container">
     <svg id="tactical-map" viewBox="0 0 800 800" xmlns="http://www.w3.org/2000/svg">
-        <!-- Background Image -->
-        <image href="https://raw.githubusercontent.com/pubg/developer-assets/master/assets/maps/Erangel_Main_High_Res.png" width="800" height="800"/>
+        <!-- Direct High-Res Image Link -->
+        <image id="map-bg" href="https://i.namu.wiki/i/f6asAE-P2PFd6mjvkf4CsiHL124RyIB_GQGpdx5ji2eDI76JdxanQFujfTbrmp_6bkreEaMmOYPs2eShzTc8Fm5RllnZkVIzFEafrcjRE25VPxr7o76OiceMLHmypetDL50Q7qf6E-73jv4fs2tRjw.webp" width="800" height="800" preserveAspectRatio="none"/>
 
         <!-- 100m Sub-Grid (Minor) -->
-        <g id="sub-grid" stroke="rgba(255, 255, 255, 0.15)" stroke-width="0.5">
-            <!-- Dynamically populated or statically layered -->
-        </g>
+        <g id="sub-grid" stroke="rgba(0, 255, 204, 0.18)" stroke-width="0.5"></g>
 
         <!-- 1km Major Grid (MGRS) -->
-        <g id="major-grid" stroke="#00ffcc" stroke-width="1.5" opacity="0.6"></g>
+        <g id="major-grid" stroke="#00ffcc" stroke-width="1.5" opacity="0.75"></g>
 
         <!-- Labels (MGRS Axes) -->
         <g id="grid-labels" fill="#00ffcc" font-size="11" font-weight="bold"></g>
@@ -84,7 +82,7 @@
 
 <div id="panel">
     <h2>🎯 FDC 전술 사격통제반</h2>
-    
+
     <div class="data-box">
         <div class="data-title">마우스 커서 MGRS 좌표 (8계단)</div>
         <div class="data-value" id="cursor-mgrs">0000 0000</div>
@@ -92,7 +90,7 @@
 
     <div class="data-box" style="border-left-color: #ff3366;">
         <div class="data-title">포병 진지 (Artillery Pos)</div>
-        <div class="data-value" id="art-pos">미설정 (클릭하여 설정)</div>
+        <div class="data-value" id="art-pos">미설정 (클릭)</div>
     </div>
 
     <div class="data-box" style="border-left-color: #ffcc00;">
@@ -102,22 +100,20 @@
 
     <div class="data-box" style="border-left-color: #00ffcc;">
         <div class="data-title">사격 제원 (FIRE SOLUTION)</div>
-        <div style="margin-top: 8px;">
+        <div style="margin-top: 8px; font-size: 13px;">
             <div>방위각 (Azimuth): <span id="fire-azimuth" style="color:#00ffcc; font-weight:bold;">-</span></div>
             <div>사거리 (Distance): <span id="fire-dist" style="color:#00ffcc; font-weight:bold;">-</span></div>
-            <div>사격 가능 여부: <span id="fire-status" style="font-weight:bold;">-</span></div>
+            <div>사격 판정: <span id="fire-status" style="font-weight:bold;">-</span></div>
         </div>
     </div>
 
     <button class="btn" onclick="resetMap()">지도 그래픽 초기화</button>
 
     <div class="instruction">
-        <b>[조작 방법]</b><br>
-        • <b>일반 클릭:</b> 포병 진지(Artillery) 설정 (사거리 동심원 표시)<br>
-        • <b>Shift + 클릭:</b> 표적 지점(Target) 설정 및 사격 제원 자동 계산<br>
-        • 🔴 Red Zone: 최소 사거리 미만 (< 121m)<br>
-        • 🟢 Green Zone: 박격포 유효 사거리 (121m ~ 700m)<br>
-        • ⚪ Grid: 1칸 = 1km / 세부선 = 100m
+        <b>[사용법]</b><br>
+        1. <b>좌클릭:</b> 포병 진지 설정 (Red: <121m / Green: 121~700m)<br>
+        2. <b>Shift + 좌클릭:</b> 표적 설정 (방위각/거리 자동 계산)<br>
+        3. <b>Grid:</b> 주격자 1칸 = 1km / 세부격자 = 100m
     </div>
 </div>
 
@@ -128,43 +124,45 @@
     const gridLabels = document.getElementById('grid-labels');
     const artLayer = document.getElementById('artillery-layer');
 
-    let artPoint = null; // {x, y, mgrs}
+    let artPoint = null;
     let targetPoint = null;
 
-    // 1. Grid Rendering
+    // Grid Rendering
     function initGrid() {
+        let subHtml = '';
+        let majorHtml = '';
+        let labelHtml = '';
+
         // Sub-grid (100m = 10px)
         for (let i = 0; i <= 800; i += 10) {
             if (i % 100 !== 0) {
-                subGrid.innerHTML += `<line x1="${i}" y1="0" x2="${i}" y2="800" />`;
-                subGrid.innerHTML += `<line x1="0" y1="${i}" x2="800" y2="${i}" />`;
+                subHtml += `<line x1="${i}" y1="0" x2="${i}" y2="800" />`;
+                subHtml += `<line x1="0" y1="${i}" x2="800" y2="${i}" />`;
             }
         }
+        subGrid.innerHTML = subHtml;
 
         // Major-grid (1km = 100px)
         for (let i = 0; i <= 800; i += 100) {
-            majorGrid.innerHTML += `<line x1="${i}" y1="0" x2="${i}" y2="800" />`;
-            majorGrid.innerHTML += `<line x1="0" y1="${i}" x2="800" y2="${i}" />`;
+            majorHtml += `<line x1="${i}" y1="0" x2="${i}" y2="800" />`;
+            majorHtml += `<line x1="0" y1="${i}" x2="800" y2="${i}" />`;
             
-            // Labels
             let val = (i / 100).toString().padStart(2, '0');
             if (i < 800) {
-                gridLabels.innerHTML += `<text x="${i + 5}" y="15">${val}</text>`;
-                gridLabels.innerHTML += `<text x="5" y="${i + 95}">${val}</text>`;
+                labelHtml += `<text x="${i + 4}" y="14">${val}</text>`;
+                labelHtml += `<text x="4" y="${i + 96}">${val}</text>`;
             }
         }
+        majorGrid.innerHTML = majorHtml;
+        gridLabels.innerHTML = labelHtml;
     }
 
-    // 2. Coordinate Conversion (Pixel to MGRS 8-digit)
     function pxToMGRS(x, y) {
-        // 800px = 8000m -> 1px = 10m
         let easting = Math.floor(x * 10).toString().padStart(4, '0');
-        // SVG Y is top-down, MGRS Y is bottom-up
         let northing = Math.floor((800 - y) * 10).toString().padStart(4, '0');
         return `${easting} ${northing}`;
     }
 
-    // Mouse Move Event
     svg.addEventListener('mousemove', (e) => {
         const rect = svg.getBoundingClientRect();
         const x = (e.clientX - rect.left) * (800 / rect.width);
@@ -172,48 +170,42 @@
         document.getElementById('cursor-mgrs').innerText = pxToMGRS(x, y);
     });
 
-    // Click Event
     svg.addEventListener('click', (e) => {
         const rect = svg.getBoundingClientRect();
         const x = (e.clientX - rect.left) * (800 / rect.width);
         const y = (e.clientY - rect.top) * (800 / rect.height);
 
         if (e.shiftKey) {
-            // Set Target
             targetPoint = { x, y, mgrs: pxToMGRS(x, y) };
             document.getElementById('target-pos').innerText = targetPoint.mgrs;
         } else {
-            // Set Artillery
             artPoint = { x, y, mgrs: pxToMGRS(x, y) };
             document.getElementById('art-pos').innerText = artPoint.mgrs;
         }
         updateGraphics();
     });
 
-    // Render Artillery Range & Fire Solution
     function updateGraphics() {
-        artLayer.innerHTML = '';
+        let html = '';
 
         if (artPoint) {
-            // Min Range (121m = 12.1px)
-            artLayer.innerHTML += `<circle cx="${artPoint.x}" cy="${artPoint.y}" r="12.1" fill="rgba(255, 0, 0, 0.2)" stroke="red" stroke-width="1"/>`;
-            // Max Range (700m = 70px)
-            artLayer.innerHTML += `<circle cx="${artPoint.x}" cy="${artPoint.y}" r="70" fill="rgba(0, 255, 204, 0.1)" stroke="#00ffcc" stroke-width="1.5" stroke-dasharray="4,4"/>`;
-            // Pos Marker
-            artLayer.innerHTML += `<circle cx="${artPoint.x}" cy="${artPoint.y}" r="4" fill="#ff3366"/>`;
+            // 최소 사거리 121m = 12.1px
+            html += `<circle cx="${artPoint.x}" cy="${artPoint.y}" r="12.1" fill="rgba(255, 0, 0, 0.25)" stroke="red" stroke-width="1.5"/>`;
+            // 최대 사거리 700m = 70px
+            html += `<circle cx="${artPoint.x}" cy="${artPoint.y}" r="70" fill="rgba(0, 255, 204, 0.12)" stroke="#00ffcc" stroke-width="1.5" stroke-dasharray="4,4"/>`;
+            // 포병 마커
+            html += `<circle cx="${artPoint.x}" cy="${artPoint.y}" r="5" fill="#ff3366" stroke="#fff" stroke-width="1"/>`;
         }
 
         if (targetPoint) {
-            artLayer.innerHTML += `<circle cx="${targetPoint.x}" cy="${targetPoint.y}" r="4" fill="#ffcc00"/>`;
+            html += `<circle cx="${targetPoint.x}" cy="${targetPoint.y}" r="5" fill="#ffcc00" stroke="#fff" stroke-width="1"/>`;
         }
 
         if (artPoint && targetPoint) {
-            // Line
-            artLayer.innerHTML += `<line x1="${artPoint.x}" y1="${artPoint.y}" x2="${targetPoint.x}" y2="${targetPoint.y}" stroke="#ffcc00" stroke-width="1.5"/>`;
+            html += `<line x1="${artPoint.x}" y1="${artPoint.y}" x2="${targetPoint.x}" y2="${targetPoint.y}" stroke="#ffcc00" stroke-width="2" stroke-dasharray="2,2"/>`;
 
-            // Calculate Distance and Azimuth
-            let dx = (targetPoint.x - artPoint.x) * 10; // in meters
-            let dy = (artPoint.y - targetPoint.y) * 10; // in meters (y inverted)
+            let dx = (targetPoint.x - artPoint.x) * 10;
+            let dy = (artPoint.y - targetPoint.y) * 10;
 
             let dist = Math.sqrt(dx * dx + dy * dy);
             let angle = Math.atan2(dx, dy) * (180 / Math.PI);
@@ -224,23 +216,25 @@
 
             let statusEle = document.getElementById('fire-status');
             if (dist < 121) {
-                statusEle.innerText = "❌ 사거리 미달 (121m 미만)";
-                statusEle.style.color = "red";
+                statusEle.innerText = "❌ 사거리 미달 (< 121m)";
+                statusEle.style.color = "#ff4444";
             } else if (dist > 700) {
-                statusEle.innerText = "❌ 사거리 초과 (700m 초과)";
-                statusEle.style.color = "red";
+                statusEle.innerText = "❌ 사거리 초과 (> 700m)";
+                statusEle.style.color = "#ff4444";
             } else {
                 statusEle.innerText = "✅ 사격 가능 (IN RANGE)";
                 statusEle.style.color = "#00ffcc";
             }
         }
+
+        artLayer.innerHTML = html;
     }
 
     function resetMap() {
         artPoint = null;
         targetPoint = null;
         artLayer.innerHTML = '';
-        document.getElementById('art-pos').innerText = "미설정 (클릭하여 설정)";
+        document.getElementById('art-pos').innerText = "미설정 (클릭)";
         document.getElementById('target-pos').innerText = "미설정 (Shift+클릭)";
         document.getElementById('fire-azimuth').innerText = "-";
         document.getElementById('fire-dist').innerText = "-";
