@@ -24,7 +24,9 @@
         svg {
             width: 100%; height: 100%;
             cursor: crosshair;
+            touch-action: none;
         }
+        svg.panning { cursor: grabbing; }
 
         /* Top Compass Rose & North Indicator */
         #top-bar {
@@ -35,7 +37,7 @@
             border: 1px solid #00ffcc;
             padding: 8px 25px;
             border-radius: 20px;
-            display: flex; align-items: center; gap: 20px;
+            display: flex; flex-direction: column; align-items: center; gap: 4px;
             box-shadow: 0 0 15px rgba(0, 255, 204, 0.2);
             pointer-events: none;
             z-index: 10;
@@ -43,13 +45,16 @@
         .compass-dial {
             font-weight: bold; font-size: 14px; letter-spacing: 2px;
         }
+        .hint-text {
+            font-size: 10px; color: #7fffdd; letter-spacing: 0.5px; opacity: 0.85;
+        }
 
         /* Bottom Status & Measurement Panel */
         #bottom-bar {
             position: absolute;
             bottom: 20px; left: 50%;
             transform: translateX(-50%);
-            width: 90%; max-width: 1000px;
+            width: 90%; max-width: 1100px;
             background: rgba(13, 17, 23, 0.9);
             border: 1px solid #00ffcc;
             border-radius: 8px;
@@ -59,7 +64,7 @@
             z-index: 10;
         }
 
-        .data-group { display: flex; gap: 25px; align-items: center; }
+        .data-group { display: flex; gap: 25px; align-items: center; flex-wrap: wrap; }
         .data-item { display: flex; flex-direction: column; }
         .data-label { font-size: 10px; color: #888; text-transform: uppercase; }
         .data-val { font-size: 16px; font-weight: bold; color: #fff; }
@@ -86,28 +91,52 @@
             font-weight: bold; cursor: pointer; z-index: 10;
         }
         #reset-btn:hover { background: #ff3366; color: #fff; }
+
+        /* Zoom Controls */
+        #zoom-controls {
+            position: absolute; right: 20px; top: 50%;
+            transform: translateY(-50%);
+            display: flex; flex-direction: column; gap: 6px;
+            z-index: 10;
+        }
+        #zoom-controls button {
+            width: 38px; height: 38px;
+            background: rgba(13, 17, 23, 0.85);
+            border: 1px solid #00ffcc; color: #00ffcc;
+            font-size: 18px; font-weight: bold; cursor: pointer;
+            border-radius: 4px;
+        }
+        #zoom-controls button:hover { background: #00ffcc; color: #050b14; }
+        #zoom-controls #zoom-view-reset { font-size: 13px; }
     </style>
 </head>
 <body>
 
 <div id="top-bar">
     <div class="compass-dial">W ◄─── N (360° / 0mils) ───► E</div>
+    <div class="hint-text">휠: 확대/축소 · 드래그: 이동 · 클릭: 좌표 찍기(A→B)</div>
 </div>
 
 <button id="reset-btn" onclick="resetPoints()">측정 초기화</button>
+
+<div id="zoom-controls">
+    <button id="zoom-in" title="확대">+</button>
+    <button id="zoom-out" title="축소">−</button>
+    <button id="zoom-view-reset" title="전체 보기">⤢</button>
+</div>
 
 <div id="map-container">
     <svg id="tactical-map" viewBox="0 0 800 800" xmlns="http://www.w3.org/2000/svg" preserveAspectRatio="xMidYMid slice">
         <!-- Erangel Map Background -->
         <image id="map-bg" href="https://i.namu.wiki/i/f6asAE-P2PFd6mjvkf4CsiHL124RyIB_GQGpdx5ji2eDI76JdxanQFujfTbrmp_6bkreEaMmOYPs2eShzTc8Fm5RllnZkVIzFEafrcjRE25VPxr7o76OiceMLHmypetDL50Q7qf6E-73jv4fs2tRjw.webp" width="800" height="800" preserveAspectRatio="none"/>
 
-        <!-- 100m Sub-Grid -->
+        <!-- 100m Fine Reference Mesh (always visible) -->
         <g id="sub-grid" stroke="rgba(0, 255, 204, 0.15)" stroke-width="0.5"></g>
 
-        <!-- 1km Major Grid (MGRS) -->
+        <!-- Zoom-dependent Major Grid (4 / 8 / 16 / 32 steps) -->
         <g id="major-grid" stroke="#00ffcc" stroke-width="1.2" opacity="0.6"></g>
 
-        <!-- MGRS Grid Labels -->
+        <!-- Major Grid Labels -->
         <g id="grid-labels" fill="#00ffcc" font-size="10" font-weight="bold"></g>
 
         <!-- Measurement Graphics Layer -->
@@ -118,8 +147,12 @@
 <div id="bottom-bar">
     <div class="data-group">
         <div class="data-item">
-            <span class="data-label">커서 좌표 (MGRS 8계단)</span>
+            <span class="data-label">커서 좌표 (MGRS)</span>
             <span class="data-val" id="cursor-pos" style="color: #00ffcc;">0000 0000</span>
+        </div>
+        <div class="data-item">
+            <span class="data-label">격자 단계</span>
+            <span class="data-val" id="grid-step" style="color: #7fffdd;">4×4</span>
         </div>
         <div class="data-item">
             <span class="data-label">A 지점</span>
@@ -145,8 +178,8 @@
 
     <!-- Scale Bar -->
     <div class="scale-container">
-        <div class="scale-bar"></div>
-        <div class="scale-text">1 km (주격자 1칸)</div>
+        <div class="scale-bar" id="scale-bar"></div>
+        <div class="scale-text" id="scale-text">2 km (주격자 1칸)</div>
     </div>
 </div>
 
@@ -156,42 +189,85 @@
     const subGrid = document.getElementById('sub-grid');
     const gridLabels = document.getElementById('grid-labels');
     const measureLayer = document.getElementById('measure-layer');
+    const gridStepEl = document.getElementById('grid-step');
+    const scaleTextEl = document.getElementById('scale-text');
+    const scaleBarEl = document.getElementById('scale-bar');
+
+    const WORLD = 800;           // full map extent in SVG world units
+    const MIN_VB = WORLD / 16;   // deepest zoom-in (scale 16x)
+    const MAX_VB = WORLD;        // fully zoomed-out (scale 1x)
+
+    // viewBox state -- the "camera" window into the 800x800 world
+    let vb = { x: 0, y: 0, w: WORLD, h: WORLD };
+    let currentStep = null; // 4, 8, 16 or 32
 
     let pointA = null;
     let pointB = null;
 
-    // Grid Initialization
-    function initGrid() {
-        let subHtml = '';
-        let majorHtml = '';
-        let labelHtml = '';
+    // Panning / click-vs-drag state
+    let isPointerDown = false;
+    let dragMoved = false;
+    let dragStartClient = null;
+    let dragStartVB = null;
 
-        for (let i = 0; i <= 800; i += 10) {
+    // Fixed 100m fine mesh (drawn once, independent of zoom level)
+    function initSubGrid() {
+        let subHtml = '';
+        for (let i = 0; i <= WORLD; i += 10) {
             if (i % 100 !== 0) {
-                subHtml += `<line x1="${i}" y1="0" x2="${i}" y2="800" />`;
-                subHtml += `<line x1="0" y1="${i}" x2="800" y2="${i}" />`;
+                subHtml += `<line x1="${i}" y1="0" x2="${i}" y2="${WORLD}" />`;
+                subHtml += `<line x1="0" y1="${i}" x2="${WORLD}" y2="${i}" />`;
             }
         }
         subGrid.innerHTML = subHtml;
+    }
 
-        for (let i = 0; i <= 800; i += 100) {
-            majorHtml += `<line x1="${i}" y1="0" x2="${i}" y2="800" />`;
-            majorHtml += `<line x1="0" y1="${i}" x2="800" y2="${i}" />`;
-            
-            let val = (i / 100).toString().padStart(2, '0');
-            if (i < 800) {
-                labelHtml += `<text x="${i + 4}" y="14">${val}</text>`;
-                labelHtml += `<text x="4" y="${i + 96}">${val}</text>`;
+    // Determine grid density tier from current zoom scale
+    // scale ~1 (fully zoomed out) -> 4 divisions
+    // scale ~2                    -> 8 divisions
+    // scale ~4                    -> 16 divisions
+    // scale >=8                   -> 32 divisions (max detail)
+    function getGridStep(vbWidth) {
+        const scale = WORLD / vbWidth;
+        if (scale < 2) return 4;
+        if (scale < 4) return 8;
+        if (scale < 8) return 16;
+        return 32;
+    }
+
+    function formatLabel(worldUnits) {
+        const meters = Math.round(worldUnits * 10);
+        if (meters === 0) return '0';
+        if (meters % 1000 === 0) return `${meters / 1000}km`;
+        if (meters >= 1000) return `${(meters / 1000).toFixed(1)}km`;
+        return `${meters}m`;
+    }
+
+    // Rebuild the major grid lines/labels only when the step tier changes
+    function rebuildMajorGrid(step) {
+        currentStep = step;
+        const cell = WORLD / step;
+        let majorHtml = '';
+        let labelHtml = '';
+
+        const off = cell * 0.06; // keeps label offset proportional to the current cell size
+        for (let i = 0; i <= WORLD; i += cell) {
+            majorHtml += `<line x1="${i}" y1="0" x2="${i}" y2="${WORLD}" />`;
+            majorHtml += `<line x1="0" y1="${i}" x2="${WORLD}" y2="${i}" />`;
+            if (i < WORLD) {
+                labelHtml += `<text x="${i + off}" y="${off * 2}">${formatLabel(i)}</text>`;
+                labelHtml += `<text x="${off}" y="${i + off * 2}">${formatLabel(i)}</text>`;
             }
         }
         majorGrid.innerHTML = majorHtml;
         gridLabels.innerHTML = labelHtml;
+        gridStepEl.innerText = `${step}×${step}`;
     }
 
-    // Convert SVG Coordinates to MGRS
+    // Convert SVG world Coordinates to MGRS (10m precision, unaffected by zoom)
     function pxToMGRS(x, y) {
         let easting = Math.floor(x * 10).toString().padStart(4, '0');
-        let northing = Math.floor((800 - y) * 10).toString().padStart(4, '0');
+        let northing = Math.floor((WORLD - y) * 10).toString().padStart(4, '0');
         return `${easting} ${northing}`;
     }
 
@@ -210,19 +286,115 @@
         return Math.max(2, Math.round(alt));
     }
 
-    // Mouse Move Event
-    svg.addEventListener('mousemove', (e) => {
+    // Screen (client) px -> World (SVG) coordinates, honoring current viewBox
+    function screenToWorld(clientX, clientY) {
         const rect = svg.getBoundingClientRect();
-        const x = (e.clientX - rect.left) * (800 / rect.width);
-        const y = (e.clientY - rect.top) * (800 / rect.height);
-        document.getElementById('cursor-pos').innerText = pxToMGRS(x, y);
+        return {
+            x: vb.x + (clientX - rect.left) / rect.width * vb.w,
+            y: vb.y + (clientY - rect.top) / rect.height * vb.h
+        };
+    }
+
+    function clamp(val, min, max) { return Math.min(Math.max(val, min), max); }
+
+    function clampViewBox() {
+        vb.w = clamp(vb.w, MIN_VB, MAX_VB);
+        vb.h = vb.w;
+        vb.x = clamp(vb.x, 0, WORLD - vb.w);
+        vb.y = clamp(vb.y, 0, WORLD - vb.h);
+    }
+
+    // Apply viewBox to the SVG and refresh everything that depends on zoom scale
+    function applyViewBox() {
+        svg.setAttribute('viewBox', `${vb.x} ${vb.y} ${vb.w} ${vb.h}`);
+
+        const k = vb.w / WORLD; // world-unit scale factor to keep on-screen sizes stable
+        majorGrid.setAttribute('stroke-width', (1.2 * k).toFixed(3));
+        subGrid.setAttribute('stroke-width', (0.5 * k).toFixed(3));
+        gridLabels.setAttribute('font-size', (10 * k).toFixed(2));
+
+        const step = getGridStep(vb.w);
+        if (step !== currentStep) rebuildMajorGrid(step);
+
+        renderMeasure(k);
+        updateScaleUI();
+    }
+
+    // Zoom in/out, keeping the given world point fixed under the cursor
+    function zoomAt(worldX, worldY, factor) {
+        const newW = clamp(vb.w * factor, MIN_VB, MAX_VB);
+        const ratio = newW / vb.w;
+        vb.x = worldX - (worldX - vb.x) * ratio;
+        vb.y = worldY - (worldY - vb.y) * ratio;
+        vb.w = newW;
+        vb.h = newW;
+        clampViewBox();
+        applyViewBox();
+    }
+
+    function zoomAtCenter(factor) {
+        zoomAt(vb.x + vb.w / 2, vb.y + vb.h / 2, factor);
+    }
+
+    function resetView() {
+        vb = { x: 0, y: 0, w: WORLD, h: WORLD };
+        applyViewBox();
+    }
+
+    // Mouse wheel zoom, centered on cursor
+    svg.addEventListener('wheel', (e) => {
+        e.preventDefault();
+        const world = screenToWorld(e.clientX, e.clientY);
+        const factor = e.deltaY < 0 ? 0.85 : 1 / 0.85;
+        zoomAt(world.x, world.y, factor);
+    }, { passive: false });
+
+    document.getElementById('zoom-in').addEventListener('click', () => zoomAtCenter(0.7));
+    document.getElementById('zoom-out').addEventListener('click', () => zoomAtCenter(1 / 0.7));
+    document.getElementById('zoom-view-reset').addEventListener('click', resetView);
+
+    // Pointer down: could become either a pan (drag) or a click (place point)
+    svg.addEventListener('mousedown', (e) => {
+        isPointerDown = true;
+        dragMoved = false;
+        dragStartClient = { x: e.clientX, y: e.clientY };
+        dragStartVB = { x: vb.x, y: vb.y };
     });
 
-    // Click Event to Pick Points
-    svg.addEventListener('click', (e) => {
-        const rect = svg.getBoundingClientRect();
-        const x = (e.clientX - rect.left) * (800 / rect.width);
-        const y = (e.clientY - rect.top) * (800 / rect.height);
+    svg.addEventListener('mousemove', (e) => {
+        if (isPointerDown) {
+            const rect = svg.getBoundingClientRect();
+            const dxScreen = e.clientX - dragStartClient.x;
+            const dyScreen = e.clientY - dragStartClient.y;
+            if (!dragMoved && Math.hypot(dxScreen, dyScreen) > 4) {
+                dragMoved = true;
+                svg.classList.add('panning');
+            }
+            if (dragMoved) {
+                vb.x = dragStartVB.x - dxScreen * (vb.w / rect.width);
+                vb.y = dragStartVB.y - dyScreen * (vb.h / rect.height);
+                clampViewBox();
+                applyViewBox();
+            }
+        }
+
+        const world = screenToWorld(e.clientX, e.clientY);
+        document.getElementById('cursor-pos').innerText = pxToMGRS(world.x, world.y);
+    });
+
+    window.addEventListener('mouseup', (e) => {
+        if (!isPointerDown) return;
+        isPointerDown = false;
+        svg.classList.remove('panning');
+
+        if (!dragMoved) {
+            handlePointClick(e);
+        }
+    });
+
+    // Click (no drag) -> pick measurement points
+    function handlePointClick(e) {
+        const { x, y } = screenToWorld(e.clientX, e.clientY);
 
         if (!pointA) {
             pointA = { x, y, mgrs: pxToMGRS(x, y), alt: estimateAltitude(x, y) };
@@ -237,27 +409,13 @@
             document.getElementById('pt-a').innerText = pointA.mgrs;
             document.getElementById('pt-b').innerText = "미지정";
         }
+        renderMeasure(vb.w / WORLD);
         updateMeasurement();
-    });
+    }
 
-    // Update Measurement Calculations & Overlay Render
+    // Update Distance/Azimuth/Elevation Calculations
     function updateMeasurement() {
-        let html = '';
-
-        if (pointA) {
-            html += `<circle cx="${pointA.x}" cy="${pointA.y}" r="6" fill="#00ffcc" stroke="#ffffff" stroke-width="1.5"/>`;
-            html += `<text x="${pointA.x + 8}" y="${pointA.y - 8}" fill="#00ffcc" font-size="12" font-weight="bold">A (${pointA.alt}m)</text>`;
-        }
-
-        if (pointB) {
-            html += `<circle cx="${pointB.x}" cy="${pointB.y}" r="6" fill="#ffcc00" stroke="#ffffff" stroke-width="1.5"/>`;
-            html += `<text x="${pointB.x + 8}" y="${pointB.y - 8}" fill="#ffcc00" font-size="12" font-weight="bold">B (${pointB.alt}m)</text>`;
-        }
-
         if (pointA && pointB) {
-            // Distance Line
-            html += `<line x1="${pointA.x}" y1="${pointA.y}" x2="${pointB.x}" y2="${pointB.y}" stroke="#ffcc00" stroke-width="2" stroke-dasharray="4,4"/>`;
-
             let dx = (pointB.x - pointA.x) * 10;
             let dy = (pointA.y - pointB.y) * 10; // Invert SVG Y-axis
 
@@ -272,13 +430,32 @@
 
             document.getElementById('calc-dist').innerText = `${dist3D.toFixed(0)}m`;
             document.getElementById('calc-azimuth').innerText = `${angle.toFixed(1)}°`;
-            
+
             let elevationText = `${dAlt >= 0 ? '+' : ''}${dAlt}m (${slope.toFixed(1)}%)`;
             document.getElementById('calc-elevation').innerText = elevationText;
         } else {
             document.getElementById('calc-dist').innerText = "-";
             document.getElementById('calc-azimuth').innerText = "-";
             document.getElementById('calc-elevation').innerText = "-";
+        }
+    }
+
+    // Redraw point markers / distance line, sized to stay legible at any zoom level
+    function renderMeasure(k) {
+        let html = '';
+
+        if (pointA) {
+            html += `<circle cx="${pointA.x}" cy="${pointA.y}" r="${6 * k}" fill="#00ffcc" stroke="#ffffff" stroke-width="${1.5 * k}"/>`;
+            html += `<text x="${pointA.x + 8 * k}" y="${pointA.y - 8 * k}" fill="#00ffcc" font-size="${12 * k}" font-weight="bold">A (${pointA.alt}m)</text>`;
+        }
+
+        if (pointB) {
+            html += `<circle cx="${pointB.x}" cy="${pointB.y}" r="${6 * k}" fill="#ffcc00" stroke="#ffffff" stroke-width="${1.5 * k}"/>`;
+            html += `<text x="${pointB.x + 8 * k}" y="${pointB.y - 8 * k}" fill="#ffcc00" font-size="${12 * k}" font-weight="bold">B (${pointB.alt}m)</text>`;
+        }
+
+        if (pointA && pointB) {
+            html += `<line x1="${pointA.x}" y1="${pointA.y}" x2="${pointB.x}" y2="${pointB.y}" stroke="#ffcc00" stroke-width="${2 * k}" stroke-dasharray="${4 * k},${4 * k}"/>`;
         }
 
         measureLayer.innerHTML = html;
@@ -295,7 +472,20 @@
         document.getElementById('calc-elevation').innerText = "-";
     }
 
-    initGrid();
+    // Scale bar reflects the real-world size of one current major grid cell
+    function updateScaleUI() {
+        const rect = svg.getBoundingClientRect();
+        const cellWorldUnits = WORLD / currentStep;
+        const cellMeters = cellWorldUnits * 10;
+
+        scaleTextEl.innerText = `${formatLabel(cellWorldUnits)} (주격자 1칸)`;
+
+        const barPx = (cellWorldUnits / vb.w) * rect.width;
+        scaleBarEl.style.width = `${clamp(barPx, 20, 200)}px`;
+    }
+
+    initSubGrid();
+    applyViewBox();
 </script>
 </body>
 </html>
