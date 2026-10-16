@@ -1,31 +1,43 @@
 <!DOCTYPE html>
-<html lang="en">
+<html lang="ko">
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>WebGPU Path Tracer</title>
 <style>
   html, body { margin: 0; height: 100%; background: #0b0d12; overflow: hidden; font-family: ui-monospace, Menlo, Consolas, monospace; color: #cfd6e4; }
-  #c { width: 100vw; height: 100vh; display: block; }
+  #c { width: 100vw; height: 100vh; display: block; cursor: crosshair; }
   #err { position: fixed; inset: 0; display: none; align-items: center; justify-content: center; flex-direction: column; gap: 14px; padding: 40px; text-align: center; background: #0b0d12; z-index: 100; }
   #err h1 { color: #ff6b6b; font-size: 22px; margin: 0; }
   #err p { max-width: 560px; line-height: 1.5; color: #9aa6bc; }
-  #hud { position: fixed; left: 12px; top: 12px; display: flex; gap: 8px; flex-wrap: wrap; z-index: 10; pointer-events: none; }
+  #hud { position: fixed; left: 12px; top: 12px; display: flex; gap: 8px; flex-wrap: wrap; z-index: 10; pointer-events: none; max-width: calc(100vw - 280px); }
   .chip { background: rgba(20,24,33,0.82); border: 1px solid rgba(120,140,180,0.25); border-radius: 999px; padding: 5px 12px; font-size: 12px; letter-spacing: 0.3px; backdrop-filter: blur(8px); }
   .chip b { color: #7fd1ff; font-weight: 600; }
+  #help { position: fixed; left: 50%; bottom: 28px; transform: translateX(-50%); z-index: 10; pointer-events: none;
+          background: rgba(20,24,33,0.82); border: 1px solid rgba(120,140,180,0.25); border-radius: 12px; padding: 10px 16px;
+          font-size: 12px; line-height: 1.7; text-align: center; backdrop-filter: blur(8px); transition: opacity .3s; }
+  #help b { color: #ffd27f; }
+  #cross { position: fixed; left: 50%; top: 50%; width: 4px; height: 4px; margin: -2px 0 0 -2px; border-radius: 50%;
+           background: rgba(255,255,255,0.75); box-shadow: 0 0 2px rgba(0,0,0,0.8); pointer-events: none; z-index: 9; display: none; }
 </style>
 </head>
 <body>
 <canvas id="c"></canvas>
+<div id="cross"></div>
 <div id="hud">
-  <div class="chip">SPP <b id="hSpp">0</b></div>
   <div class="chip">FPS <b id="hFps">0</b></div>
   <div class="chip">RES <b id="hRes">-</b></div>
+  <div class="chip">SPP <b id="hSpp">0</b></div>
+  <div class="chip">TRIS <b id="hTris">0</b></div>
   <div class="chip" id="hStatus">init</div>
+</div>
+<div id="help">
+  <b>화면 클릭</b>으로 시점 고정 · <b>WASD</b> 이동 · <b>마우스</b> 시점 · <b>Shift</b> 달리기<br>
+  <b>F</b> 비행 모드 · <b>Space / C</b> 위 / 아래(비행) · <b>Esc</b> 마우스 해제 · <b>1 / 2 / 3</b> 장면 전환
 </div>
 <div id="err">
   <h1>WebGPU not available</h1>
-  <p>This path tracer requires WebGPU. Please use a recent version of Chrome or Edge (or another browser with WebGPU enabled). On Linux you may need to launch with <code>--enable-unsafe-webgpu</code>.</p>
+  <p>이 패스트레이서는 WebGPU가 필요합니다. 최신 Chrome / Edge를 사용해 주세요. (Linux는 <code>--enable-unsafe-webgpu</code> 플래그가 필요할 수 있습니다.)</p>
 </div>
 
 <script type="importmap">
@@ -33,8 +45,6 @@
   "imports": {
     "three": "https://unpkg.com/three@0.160.0/build/three.module.js",
     "three/addons/": "https://unpkg.com/three@0.160.0/examples/jsm/",
-    "three/examples/jsm/": "https://unpkg.com/three@0.160.0/examples/jsm/",
-    "three-mesh-bvh": "https://unpkg.com/three-mesh-bvh@0.7.0/build/index.module.js",
     "lil-gui": "https://unpkg.com/lil-gui@0.19.1/dist/lil-gui.esm.min.js"
   }
 }
@@ -42,7 +52,6 @@
 
 <script type="module">
 import * as THREE from 'three';
-import { OrbitControls } from 'three/addons/controls/OrbitControls.js';
 import { OBJLoader } from 'three/addons/loaders/OBJLoader.js';
 import { GLTFLoader } from 'three/addons/loaders/GLTFLoader.js';
 import GUI from 'lil-gui';
@@ -58,17 +67,25 @@ function fatal(title, msg) {
 if (!navigator.gpu) fatal('WebGPU not available');
 
 const canvas = document.getElementById('c');
-const hSpp = document.getElementById('hSpp');
 const hFps = document.getElementById('hFps');
 const hRes = document.getElementById('hRes');
+const hSpp = document.getElementById('hSpp');
+const hTris = document.getElementById('hTris');
 const hStatus = document.getElementById('hStatus');
+const helpEl = document.getElementById('help');
+const crossEl = document.getElementById('cross');
 
 // ---------------------------------------------------------------------------
 // Device
 // ---------------------------------------------------------------------------
 const adapter = await navigator.gpu.requestAdapter({ powerPreference: 'high-performance' });
 if (!adapter) fatal('No WebGPU adapter');
-const device = await adapter.requestDevice();
+const device = await adapter.requestDevice({
+  requiredLimits: {
+    maxStorageBufferBindingSize: adapter.limits.maxStorageBufferBindingSize,
+    maxBufferSize: adapter.limits.maxBufferSize,
+  },
+});
 device.lost.then((info) => { if (info.reason !== 'destroyed') fatal('WebGPU device lost', info.message || ''); });
 
 const ctx = canvas.getContext('webgpu');
@@ -76,254 +93,684 @@ const format = navigator.gpu.getPreferredCanvasFormat();
 ctx.configure({ device, format, alphaMode: 'opaque' });
 
 // ---------------------------------------------------------------------------
-// Three.js (geometry helpers only)
+// Utilities
 // ---------------------------------------------------------------------------
-const camera = new THREE.PerspectiveCamera(45, 1, 0.01, 1000);
-camera.position.set(6, 4.2, 8);
-
-const controls = new OrbitControls(camera, canvas);
-controls.target.set(0, 1, 0);
-controls.enableDamping = true;
-controls.dampingFactor = 0.08;
-controls.update();
-
-const scene = new THREE.Scene();
-let triList = [];
-let materials = [];
-const materialMap = new Map();
-
-function registerMaterial(mat) {
-  if (materialMap.has(mat)) return materialMap.get(mat);
-  const c = mat.color || { r: 0.8, g: 0.8, b: 0.8 };
-  const e = mat.emissive || { r: 0, g: 0, b: 0 };
-  const ei = (mat.emissiveIntensity ?? 1.0);
-  const m = {
-    baseColor: [c.r, c.g, c.b],
-    metalness: mat.metalness ?? 0.0,
-    roughness: Math.max(0.001, mat.roughness ?? 1.0),
-    emission: [e.r * ei, e.g * ei, e.b * ei],
-    transmission: mat.transmission ?? 0.0,
-    ior: mat.ior ?? 1.5,
+function mulberry32(a) {
+  return function () {
+    a |= 0; a = (a + 0x6D2B79F5) | 0;
+    let t = Math.imul(a ^ (a >>> 15), 1 | a);
+    t = (t + Math.imul(t ^ (t >>> 7), 61 | t)) ^ t;
+    return ((t ^ (t >>> 14)) >>> 0) / 4294967296;
   };
-  const idx = materials.length;
-  materials.push(m);
-  materialMap.set(mat, idx);
-  return idx;
 }
+const lerp = (a, b, t) => a + (b - a) * t;
+const lerp3 = (a, b, t) => [lerp(a[0], b[0], t), lerp(a[1], b[1], t), lerp(a[2], b[2], t)];
+const smoothstep = (a, b, x) => { const t = Math.min(1, Math.max(0, (x - a) / (b - a))); return t * t * (3 - 2 * t); };
+const hex = (h) => [((h >> 16) & 255) / 255, ((h >> 8) & 255) / 255, (h & 255) / 255].map((c) => Math.pow(c, 2.2));
 
-const _v0 = new THREE.Vector3(), _v1 = new THREE.Vector3(), _v2 = new THREE.Vector3();
-const _n0 = new THREE.Vector3(), _n1 = new THREE.Vector3(), _n2 = new THREE.Vector3();
-const _nm = new THREE.Matrix3();
+// 밀밭 경로 / 영역 함수 — WGSL 쪽과 동일한 식을 사용한다.
+const pathX = (z) => 4.0 * Math.sin(z * 0.035) + 1.5 * Math.sin(z * 0.011 + 1.0);
 
-function extractTriangles(mesh) {
-  mesh.updateMatrixWorld(true);
-  const geo = mesh.geometry;
-  const mat = Array.isArray(mesh.material) ? mesh.material[0] : mesh.material;
-  const matIdx = registerMaterial(mat);
-  const pos = geo.attributes.position;
-  if (!pos) return;
-  const nrm = geo.attributes.normal;
-  const idx = geo.index;
-  const wm = mesh.matrixWorld;
-  _nm.getNormalMatrix(wm);
-  const count = idx ? idx.count : pos.count;
-  const gi = (i) => idx ? idx.getX(i) : i;
-  for (let i = 0; i < count; i += 3) {
-    const a = gi(i), b = gi(i + 1), c = gi(i + 2);
-    _v0.fromBufferAttribute(pos, a).applyMatrix4(wm);
-    _v1.fromBufferAttribute(pos, b).applyMatrix4(wm);
-    _v2.fromBufferAttribute(pos, c).applyMatrix4(wm);
-    if (nrm) {
-      _n0.fromBufferAttribute(nrm, a).applyMatrix3(_nm).normalize();
-      _n1.fromBufferAttribute(nrm, b).applyMatrix3(_nm).normalize();
-      _n2.fromBufferAttribute(nrm, c).applyMatrix3(_nm).normalize();
-    } else {
-      _n0.subVectors(_v1, _v0).cross(_n2.subVectors(_v2, _v0)).normalize();
-      _n1.copy(_n0); _n2.copy(_n0);
-    }
-    triList.push({
-      v0: [_v0.x, _v0.y, _v0.z], v1: [_v1.x, _v1.y, _v1.z], v2: [_v2.x, _v2.y, _v2.z],
-      n0: [_n0.x, _n0.y, _n0.z], n1: [_n1.x, _n1.y, _n1.z], n2: [_n2.x, _n2.y, _n2.z],
-      matIdx,
+// ---------------------------------------------------------------------------
+// Scene builder (삼각형 + 재질 + 충돌 박스)
+// ---------------------------------------------------------------------------
+const PAT = { NONE: 0, FACADE: 1, ROAD: 2, SIDEWALK: 3, FARM: 4, CHECKER: 5, NIGHTLAMP: 6, FOLIAGE: 7 };
+
+class SceneBuilder {
+  constructor() {
+    this.pos = []; this.nrm = []; this.mat = [];
+    this.mats = [];
+    this.colliders = [];
+  }
+  material(o) {
+    this.mats.push({
+      albedo: o.albedo ?? [0.8, 0.8, 0.8], rough: o.rough ?? 0.8,
+      emission: o.emission ?? [0, 0, 0], metal: o.metal ?? 0,
+      spec: o.spec ?? 0.04, transmission: o.transmission ?? 0, ior: o.ior ?? 1.5, pattern: o.pattern ?? 0,
+      p: o.p ?? [0, 0, 0, 0], color2: o.color2 ?? [1, 1, 1], p4: o.p4 ?? 0,
     });
+    return this.mats.length - 1;
+  }
+  get triCount() { return this.mat.length; }
+  tri(a, b, c, na, nb, nc, m) {
+    this.pos.push(a[0], a[1], a[2], b[0], b[1], b[2], c[0], c[1], c[2]);
+    if (!na) {
+      const ux = b[0] - a[0], uy = b[1] - a[1], uz = b[2] - a[2];
+      const vx = c[0] - a[0], vy = c[1] - a[1], vz = c[2] - a[2];
+      let nx = uy * vz - uz * vy, ny = uz * vx - ux * vz, nz = ux * vy - uy * vx;
+      const l = Math.hypot(nx, ny, nz) || 1; nx /= l; ny /= l; nz /= l;
+      na = nb = nc = [nx, ny, nz];
+    }
+    this.nrm.push(na[0], na[1], na[2], nb[0], nb[1], nb[2], nc[0], nc[1], nc[2]);
+    this.mat.push(m);
+  }
+  quad(a, b, c, d, m) { this.tri(a, b, c, null, null, null, m); this.tri(a, c, d, null, null, null, m); }
+  // 축 정렬 박스. opts.collide: 플레이어 충돌, opts.bottom: 바닥면 생성 여부
+  box(x0, y0, z0, x1, y1, z1, m, opts = {}) {
+    const A = [x0, y0, z0], B = [x1, y0, z0], C = [x1, y0, z1], D = [x0, y0, z1];
+    const E = [x0, y1, z0], F = [x1, y1, z0], G = [x1, y1, z1], H = [x0, y1, z1];
+    this.quad(E, H, G, F, m);            // top
+    if (opts.bottom) this.quad(A, B, C, D, m);
+    this.quad(A, E, F, B, m);            // -z
+    this.quad(C, G, H, D, m);            // +z
+    this.quad(D, H, E, A, m);            // -x
+    this.quad(B, F, G, C, m);            // +x
+    if (opts.collide) this.colliders.push({ min: [x0, y0, z0], max: [x1, y1, z1] });
+  }
+  // 임의 방향 박스 (center, 세 축 반길이 벡터)
+  obox(c, ax, ay, az, m) {
+    const p = (sx, sy, sz) => [c[0] + ax[0] * sx + ay[0] * sy + az[0] * sz, c[1] + ax[1] * sx + ay[1] * sy + az[1] * sz, c[2] + ax[2] * sx + ay[2] * sy + az[2] * sz];
+    const A = p(-1, -1, -1), B = p(1, -1, -1), C = p(1, -1, 1), D = p(-1, -1, 1);
+    const E = p(-1, 1, -1), F = p(1, 1, -1), G = p(1, 1, 1), H = p(-1, 1, 1);
+    this.quad(E, H, G, F, m); this.quad(A, B, C, D, m);
+    this.quad(A, E, F, B, m); this.quad(C, G, H, D, m);
+    this.quad(D, H, E, A, m); this.quad(B, F, G, C, m);
+  }
+  // p0 -> p1 축의 원기둥 (부드러운 법선)
+  cylinder(p0, p1, r0, r1, m, seg = 10, caps = true) {
+    const ax = [p1[0] - p0[0], p1[1] - p0[1], p1[2] - p0[2]];
+    const L = Math.hypot(ax[0], ax[1], ax[2]); const w = ax.map((v) => v / L);
+    const t = Math.abs(w[1]) < 0.9 ? [0, 1, 0] : [1, 0, 0];
+    let u = [w[1] * t[2] - w[2] * t[1], w[2] * t[0] - w[0] * t[2], w[0] * t[1] - w[1] * t[0]];
+    const ul = Math.hypot(...u); u = u.map((v) => v / ul);
+    const v = [w[1] * u[2] - w[2] * u[1], w[2] * u[0] - w[0] * u[2], w[0] * u[1] - w[1] * u[0]];
+    const ring = (p, r, a) => [p[0] + (u[0] * Math.cos(a) + v[0] * Math.sin(a)) * r, p[1] + (u[1] * Math.cos(a) + v[1] * Math.sin(a)) * r, p[2] + (u[2] * Math.cos(a) + v[2] * Math.sin(a)) * r];
+    const nr = (a) => [u[0] * Math.cos(a) + v[0] * Math.sin(a), u[1] * Math.cos(a) + v[1] * Math.sin(a), u[2] * Math.cos(a) + v[2] * Math.sin(a)];
+    for (let i = 0; i < seg; i++) {
+      const a0 = (i / seg) * Math.PI * 2, a1 = ((i + 1) / seg) * Math.PI * 2;
+      const A = ring(p0, r0, a0), B = ring(p0, r0, a1), C = ring(p1, r1, a1), D = ring(p1, r1, a0);
+      const n0 = nr(a0), n1 = nr(a1);
+      this.tri(A, B, C, n0, n1, n1, m); this.tri(A, C, D, n0, n1, n0, m);
+      if (caps) {
+        if (r1 > 0) this.tri(p1, D, C, w, w, w, m);
+        if (r0 > 0) { const nw = w.map((x) => -x); this.tri(p0, B, A, nw, nw, nw, m); }
+      }
+    }
+  }
+  // 위경도 구 (sy: 세로 스케일, jitter: 로우폴리 울퉁불퉁)
+  sphere(c, r, m, ws = 16, hs = 10, sy = 1, jitter = 0, rng = null, flat = false) {
+    const pts = [];
+    for (let j = 0; j <= hs; j++) {
+      const row = [];
+      for (let i = 0; i <= ws; i++) {
+        const th = (j / hs) * Math.PI, ph = ((i % ws) / ws) * Math.PI * 2;
+        const n = [Math.sin(th) * Math.cos(ph), Math.cos(th), Math.sin(th) * Math.sin(ph)];
+        let rr = r;
+        if (jitter && j > 0 && j < hs) rr *= 1 + (rng() - 0.5) * jitter;
+        row.push({ p: [c[0] + n[0] * rr, c[1] + n[1] * rr * sy, c[2] + n[2] * rr], n });
+      }
+      if (jitter) row[ws] = row[0];
+      pts.push(row);
+    }
+    for (let j = 0; j < hs; j++) for (let i = 0; i < ws; i++) {
+      const a = pts[j][i], b = pts[j][i + 1], cc = pts[j + 1][i + 1], d = pts[j + 1][i];
+      if (flat) {
+        if (j > 0) this.tri(a.p, b.p, cc.p, null, null, null, m);
+        if (j < hs - 1) this.tri(a.p, cc.p, d.p, null, null, null, m);
+      } else {
+        if (j > 0) this.tri(a.p, b.p, cc.p, a.n, b.n, cc.n, m);
+        if (j < hs - 1) this.tri(a.p, cc.p, d.p, a.n, cc.n, d.n, m);
+      }
+    }
+  }
+  // 바닥 타일 (큰 삼각형 하나보다 BVH 품질이 좋다)
+  groundTiles(x0, z0, x1, z1, n, m, y = 0) {
+    for (let j = 0; j < n; j++) for (let i = 0; i < n; i++) {
+      const ax = lerp(x0, x1, i / n), bx = lerp(x0, x1, (i + 1) / n);
+      const az = lerp(z0, z1, j / n), bz = lerp(z0, z1, (j + 1) / n);
+      this.quad([ax, y, az], [ax, y, bz], [bx, y, bz], [bx, y, az], m);
+    }
+  }
+  fromThreeMesh(mesh) {
+    mesh.updateMatrixWorld(true);
+    const geo = mesh.geometry;
+    const mat = Array.isArray(mesh.material) ? mesh.material[0] : mesh.material;
+    const c = mat.color || { r: 0.8, g: 0.8, b: 0.8 };
+    const e = mat.emissive || { r: 0, g: 0, b: 0 };
+    const ei = mat.emissiveIntensity ?? 1.0;
+    const m = this.material({
+      albedo: [c.r, c.g, c.b], rough: Math.max(0.02, mat.roughness ?? 0.7), metal: mat.metalness ?? 0,
+      emission: [e.r * ei, e.g * ei, e.b * ei], transmission: mat.transmission ?? 0, ior: mat.ior ?? 1.5,
+    });
+    const pos = geo.attributes.position; if (!pos) return;
+    const nrm = geo.attributes.normal, idx = geo.index, wm = mesh.matrixWorld;
+    const nm = new THREE.Matrix3().getNormalMatrix(wm);
+    const v = [new THREE.Vector3(), new THREE.Vector3(), new THREE.Vector3()];
+    const n = [new THREE.Vector3(), new THREE.Vector3(), new THREE.Vector3()];
+    const count = idx ? idx.count : pos.count;
+    for (let i = 0; i + 2 < count; i += 3) {
+      for (let k = 0; k < 3; k++) {
+        const vi = idx ? idx.getX(i + k) : i + k;
+        v[k].fromBufferAttribute(pos, vi).applyMatrix4(wm);
+        if (nrm) n[k].fromBufferAttribute(nrm, vi).applyMatrix3(nm).normalize();
+      }
+      const A = v[0].toArray(), B = v[1].toArray(), C = v[2].toArray();
+      if (nrm) this.tri(A, B, C, n[0].toArray(), n[1].toArray(), n[2].toArray(), m);
+      else this.tri(A, B, C, null, null, null, m);
+    }
   }
 }
 
-function buildDefaultScene() {
-  triList = []; materials = []; materialMap.clear();
-  while (scene.children.length) scene.remove(scene.children[0]);
-
-  const floor = new THREE.Mesh(
-    new THREE.BoxGeometry(40, 0.5, 40),
-    new THREE.MeshStandardMaterial({ color: 0xb8bcc4, roughness: 0.08, metalness: 0.0 })
-  );
-  floor.position.y = -0.25;
-  scene.add(floor);
-
-  const mirror = new THREE.Mesh(
-    new THREE.SphereGeometry(1.3, 64, 48),
-    new THREE.MeshStandardMaterial({ color: 0xffffff, metalness: 1.0, roughness: 0.02 })
-  );
-  mirror.position.set(-3, 1.3, 0);
-  scene.add(mirror);
-
-  const gold = new THREE.Mesh(
-    new THREE.SphereGeometry(1.3, 64, 48),
-    new THREE.MeshStandardMaterial({ color: 0xffc864, metalness: 1.0, roughness: 0.18 })
-  );
-  gold.position.set(0, 1.3, 0);
-  scene.add(gold);
-
-  const glassMat = new THREE.MeshPhysicalMaterial({ color: 0xffffff, transmission: 1.0, ior: 1.5, roughness: 0.0, metalness: 0.0 });
-  const glass = new THREE.Mesh(new THREE.SphereGeometry(1.3, 64, 48), glassMat);
-  glass.position.set(3, 1.3, 0);
-  scene.add(glass);
-
-  const teal = new THREE.Mesh(
-    new THREE.BoxGeometry(1.6, 1.6, 1.6),
-    new THREE.MeshStandardMaterial({ color: 0x2f9e8f, roughness: 0.55, metalness: 0.0 })
-  );
-  teal.position.set(0.2, 0.8, -3.2);
-  teal.rotation.y = 0.5;
-  scene.add(teal);
-
-  scene.traverse((o) => { if (o.isMesh) extractTriangles(o); });
-}
-
 // ---------------------------------------------------------------------------
-// BVH (longest axis, centroid median split)
+// Scene 1: 맨해튼풍 애비뉴 (건물 사이 협곡 + 맨해튼헨지 석양)
 // ---------------------------------------------------------------------------
-function buildBVH(tris) {
-  const nodes = [];
-  const order = tris.map((_, i) => i);
-  const cent = tris.map((t) => [
-    (t.v0[0] + t.v1[0] + t.v2[0]) / 3,
-    (t.v0[1] + t.v1[1] + t.v2[1]) / 3,
-    (t.v0[2] + t.v1[2] + t.v2[2]) / 3,
-  ]);
+function buildCityScene() {
+  const sb = new SceneBuilder();
+  const rng = mulberry32(1234);
+  const P = 90, ROAD = 9, SIDE = 14, CROSS = 7;
 
-  function triBounds(ti, mn, mx) {
-    const t = tris[ti];
-    for (const v of [t.v0, t.v1, t.v2]) {
-      for (let k = 0; k < 3; k++) { mn[k] = Math.min(mn[k], v[k]); mx[k] = Math.max(mx[k], v[k]); }
+  const mRoad = sb.material({ albedo: [0.075, 0.075, 0.08], rough: 0.75, pattern: PAT.ROAD, p: [P, ROAD, CROSS, 0] });
+  const mWalk = sb.material({ albedo: [0.42, 0.40, 0.37], rough: 0.85, pattern: PAT.SIDEWALK });
+  const mPole = sb.material({ albedo: [0.05, 0.06, 0.06], rough: 0.45, metal: 0.6 });
+  const mLamp = sb.material({ albedo: [1, 1, 1], emission: [6.0, 4.6, 2.8], rough: 0.5, pattern: PAT.NIGHTLAMP });
+  const mTrunk = sb.material({ albedo: [0.12, 0.08, 0.05], rough: 0.95 });
+  const mLeaf = sb.material({ albedo: [0.10, 0.22, 0.05], rough: 0.85, pattern: PAT.FOLIAGE, color2: [0.24, 0.30, 0.06] });
+  const mTire = sb.material({ albedo: [0.02, 0.02, 0.02], rough: 0.7 });
+  const mCarGlass = sb.material({ albedo: [0.01, 0.012, 0.015], rough: 0.04, spec: 0.12 });
+  const mCab = sb.material({ albedo: [0.85, 0.55, 0.02], rough: 0.25, spec: 0.06 });
+  const carPaints = [
+    sb.material({ albedo: [0.02, 0.02, 0.025], rough: 0.2, spec: 0.07 }),
+    sb.material({ albedo: [0.6, 0.6, 0.62], rough: 0.25, metal: 0.6 }),
+    sb.material({ albedo: [0.35, 0.02, 0.02], rough: 0.25, spec: 0.06 }),
+    sb.material({ albedo: [0.75, 0.75, 0.75], rough: 0.3, spec: 0.05 }),
+    sb.material({ albedo: [0.03, 0.08, 0.2], rough: 0.25, spec: 0.06 }),
+  ];
+  const mSignal = sb.material({ albedo: [0.03, 0.03, 0.02], rough: 0.5 });
+  const mRed = sb.material({ albedo: [1, 0.1, 0.05], emission: [3.0, 0.2, 0.05], rough: 0.3 });
+  const mGreen = sb.material({ albedo: [0.1, 1, 0.4], emission: [0.2, 2.5, 0.8], rough: 0.3 });
+  const mTankWood = sb.material({ albedo: [0.22, 0.14, 0.08], rough: 0.9 });
+  const mRoofBox = sb.material({ albedo: [0.30, 0.30, 0.30], rough: 0.7, metal: 0.3 });
+
+  const brick = [[0.32, 0.12, 0.08], [0.45, 0.30, 0.20], [0.55, 0.50, 0.42], [0.38, 0.36, 0.34], [0.60, 0.55, 0.45], [0.26, 0.18, 0.14]];
+  const glassTints = [[0.55, 0.75, 0.9], [0.5, 0.8, 0.75], [0.8, 0.8, 0.85], [0.75, 0.62, 0.45], [0.45, 0.55, 0.75]];
+  const facadeMats = {};
+  function facade(kind) {
+    if (kind === 'prewar') {
+      const c = brick[(rng() * brick.length) | 0];
+      return sb.material({ albedo: c.map((v) => v * (0.85 + rng() * 0.3)), rough: 0.85, pattern: PAT.FACADE,
+        p: [3.3 + rng() * 0.5, 1.7 + rng() * 0.6, 0.42 + rng() * 0.1, 0.06], color2: [0.7, 0.75, 0.8], p4: rng() * 100 });
+    }
+    if (kind === 'glass') {
+      const t = glassTints[(rng() * glassTints.length) | 0];
+      return sb.material({ albedo: [0.08, 0.09, 0.1], rough: 0.4, metal: 0.5, pattern: PAT.FACADE,
+        p: [3.8, 1.5 + rng() * 0.3, 0.93, 0.28 + rng() * 0.12], color2: t, p4: rng() * 100 });
+    }
+    if (kind === 'deco') {
+      if (!facadeMats.deco) facadeMats.deco = sb.material({ albedo: [0.62, 0.58, 0.50], rough: 0.8, pattern: PAT.FACADE,
+        p: [3.6, 1.45, 0.5, 0.08], color2: [0.7, 0.75, 0.8], p4: 7 });
+      return facadeMats.deco;
+    }
+    return sb.material({ albedo: [0.5, 0.48, 0.45], rough: 0.85, pattern: PAT.FACADE, p: [3.4, 2.0, 0.5, 0.05], color2: [0.7, 0.75, 0.8], p4: rng() * 100 });
+  }
+  const mCornice = sb.material({ albedo: [0.62, 0.58, 0.52], rough: 0.7 });
+
+  // 지면: 아스팔트 (도로 무늬는 셰이더에서 절차적으로)
+  sb.groundTiles(-1500, -1500, 1500, 1500, 20, mRoad, 0);
+
+  function waterTower(cx, cy, cz) {
+    const r = 2.0 + rng() * 0.6, h = 3.5 + rng() * 1.5, leg = 3.0;
+    for (const [dx, dz] of [[-1, -1], [1, -1], [1, 1], [-1, 1]]) {
+      sb.box(cx + dx * r * 0.6 - 0.12, cy, cz + dz * r * 0.6 - 0.12, cx + dx * r * 0.6 + 0.12, cy + leg, cz + dz * r * 0.6 + 0.12, mPole);
+    }
+    sb.cylinder([cx, cy + leg, cz], [cx, cy + leg + h, cz], r, r, mTankWood, 12, true);
+    sb.cylinder([cx, cy + leg + h, cz], [cx, cy + leg + h + 1.6, cz], r * 1.05, 0.0, mTankWood, 12, false);
+  }
+
+  function building(x0, z0, x1, z1, h, style) {
+    const fm = facade(style);
+    if (style === 'glass') {
+      const inset = rng() < 0.5 ? 0 : 1.5;
+      sb.box(x0, 0, z0, x1, h, z1, fm, { collide: true });
+      if (rng() < 0.6) sb.box(x0 + 2 + inset, h, z0 + 2 + inset, x1 - 2 - inset, h + 4 + rng() * 6, z1 - 2 - inset, fm);
+      return;
+    }
+    // 프리워(prewar) 석조 건물: 셋백 + 코니스 + 물탱크
+    let y = 0, bx0 = x0, bx1 = x1, bz0 = z0, bz1 = z1;
+    const tiers = h > 70 ? 3 : h > 40 ? 2 : 1;
+    for (let t = 0; t < tiers; t++) {
+      const top = t === tiers - 1 ? h : y + (h - y) * (0.45 + rng() * 0.2);
+      sb.box(bx0, y, bz0, bx1, top, bz1, fm, { collide: t === 0 });
+      sb.box(bx0 - 0.35, top - 0.7, bz0 - 0.35, bx1 + 0.35, top, bz1 + 0.35, mCornice);
+      y = top;
+      const ix = Math.min((bx1 - bx0) * 0.18, 3 + rng() * 2), iz = Math.min((bz1 - bz0) * 0.18, 3 + rng() * 2);
+      bx0 += ix; bx1 -= ix; bz0 += iz; bz1 -= iz;
+    }
+    if (h < 80 && rng() < 0.55) waterTower(lerp(bx0, bx1, 0.3 + rng() * 0.4), h, lerp(bz0, bz1, 0.3 + rng() * 0.4));
+    if (rng() < 0.6) {
+      const cx = lerp(bx0, bx1, rng()), cz = lerp(bz0, bz1, rng());
+      sb.box(cx - 1.5, h, cz - 1, cx + 1.5, h + 2, cz + 1, mRoofBox);
     }
   }
 
-  function build(start, end, depth) {
-    const ni = nodes.length;
+  // 랜드마크: 아르데코 첨탑 빌딩
+  function landmark(x0, z0, x1, z1) {
+    const fm = facade('deco');
+    const cx = (x0 + x1) / 2, cz = (z0 + z1) / 2;
+    sb.box(x0, 0, z0, x1, 26, z1, fm, { collide: true });
+    sb.box(x0 - 0.4, 25.3, z0 - 0.4, x1 + 0.4, 26, z1 + 0.4, mCornice);
+    const tiers = [[0.36, 26, 82], [0.28, 82, 248], [0.22, 248, 268], [0.16, 268, 290], [0.11, 290, 304]];
+    const W = (x1 - x0), D = (z1 - z0);
+    for (const [s, y0, y1] of tiers) {
+      sb.box(cx - W * s, y0, cz - D * s, cx + W * s, y1, cz + D * s, fm);
+      sb.box(cx - W * s - 0.3, y1 - 0.8, cz - D * s - 0.3, cx + W * s + 0.3, y1, cz + D * s + 0.3, mCornice);
+    }
+    sb.cylinder([cx, 304, cz], [cx, 332, cz], 3.2, 2.2, mCornice, 16, true);
+    sb.cylinder([cx, 332, cz], [cx, 372, cz], 0.9, 0.25, mPole, 8, true);
+    sb.sphere([cx, 373, cz], 0.6, mRed, 8, 6);
+  }
+
+  function streetLight(x, z, s) {
+    sb.cylinder([x, 0.15, z], [x, 8, z], 0.1, 0.08, mPole, 6, false);
+    sb.colliders.push({ min: [x - 0.15, 0, z - 0.15], max: [x + 0.15, 8, z + 0.15] });
+    sb.box(Math.min(x, x - s * 2.6), 7.85, z - 0.06, Math.max(x, x - s * 2.6), 8.0, z + 0.06, mPole);
+    const lx = x - s * 2.6;
+    sb.box(lx - 0.35, 7.7, z - 0.2, lx + 0.35, 7.95, z + 0.2, mPole);
+    sb.box(lx - 0.3, 7.62, z - 0.16, lx + 0.3, 7.7, z + 0.16, mLamp);
+  }
+
+  function tree(x, z) {
+    const h = 2.6 + rng() * 1.0;
+    sb.cylinder([x, 0.15, z], [x, h + 1.2, z], 0.16, 0.1, mTrunk, 6, false);
+    sb.colliders.push({ min: [x - 0.25, 0, z - 0.25], max: [x + 0.25, 4, z + 0.25] });
+    const r = 1.8 + rng() * 0.8;
+    sb.sphere([x, h + r * 0.7, z], r, mLeaf, 9, 6, 0.85, 0.35, rng, true);
+    if (rng() < 0.6) sb.sphere([x + (rng() - 0.5) * 1.5, h + r * 1.2, z + (rng() - 0.5) * 1.5], r * 0.7, mLeaf, 8, 5, 0.9, 0.35, rng, true);
+  }
+
+  function car(x, z, dir) {
+    const cab = rng() < 0.45;
+    const paint = cab ? mCab : carPaints[(rng() * carPaints.length) | 0];
+    const L = 4.6, W = 1.85;
+    const z0 = z - L / 2, z1 = z + L / 2;
+    sb.box(x - W / 2, 0.32, z0, x + W / 2, 1.0, z1, paint, { collide: true });
+    const cf = dir > 0 ? 0.25 : -0.25;
+    sb.box(x - W / 2 + 0.08, 1.0, z - 1.25 + cf, x + W / 2 - 0.08, 1.55, z + 1.15 + cf, mCarGlass);
+    sb.box(x - W / 2 + 0.12, 1.55, z - 1.1 + cf, x + W / 2 - 0.12, 1.6, z + 1.0 + cf, paint);
+    if (cab) sb.box(x - 0.35, 1.6, z - 0.15 + cf, x + 0.35, 1.9, z + 0.15 + cf, mLamp);
+    for (const wz of [z0 + 0.85, z1 - 0.85]) for (const wx of [-1, 1]) {
+      const px = x + wx * (W / 2 - 0.05);
+      sb.cylinder([px - 0.13, 0.34, wz], [px + 0.13, 0.34, wz], 0.34, 0.34, mTire, 8, true);
+    }
+    // 브레이크 / 헤드라이트
+    const back = dir > 0 ? z0 : z1, front = dir > 0 ? z1 : z0;
+    sb.box(x - W / 2 + 0.1, 0.75, back - 0.03, x - W / 2 + 0.45, 0.9, back + 0.03, mRed);
+    sb.box(x + W / 2 - 0.45, 0.75, back - 0.03, x + W / 2 - 0.1, 0.9, back + 0.03, mRed);
+    sb.box(x - W / 2 + 0.1, 0.7, front - 0.03, x - W / 2 + 0.45, 0.85, front + 0.03, mLamp);
+    sb.box(x + W / 2 - 0.45, 0.7, front - 0.03, x + W / 2 - 0.1, 0.85, front + 0.03, mLamp);
+  }
+
+  function signal(x, z, s) {
+    sb.cylinder([x, 0.15, z], [x, 5.8, z], 0.09, 0.09, mSignal, 6, false);
+    sb.box(x - s * 3.5, 5.6, z - 0.07, x, 5.75, z + 0.07, mSignal);
+    const hx = x - s * 3.2;
+    sb.box(hx - 0.2, 4.6, z - 0.2, hx + 0.2, 5.6, z + 0.2, mSignal);
+    sb.box(hx - 0.12, 5.25, z - 0.23, hx + 0.12, 5.45, z - 0.2, rng() < 0.5 ? mRed : mGreen);
+    sb.colliders.push({ min: [x - 0.15, 0, z - 0.15], max: [x + 0.15, 6, z + 0.15] });
+  }
+
+  const KMIN = -3, KMAX = 7;
+  for (let k = KMIN; k < KMAX; k++) {
+    const bz0 = k * P + CROSS, bz1 = (k + 1) * P - CROSS;
+    for (const s of [-1, 1]) {
+      const xa = s * ROAD, xb = s * 150;
+      sb.box(Math.min(xa, xb), 0, bz0, Math.max(xa, xb), 0.15, bz1, mWalk);
+      sb.colliders.push({ min: [Math.min(xa, xb), 0, bz0], max: [Math.max(xa, xb), 0.15, bz1], step: true });
+
+      // 랜드마크 블록
+      if (k === 3 && s === 1) {
+        landmark(SIDE + 2, bz0 + 5, SIDE + 62, bz1 - 5);
+      } else {
+        // 앞줄 건물: 애비뉴를 따라 필지 분할
+        let z = bz0 + 4;
+        while (z < bz1 - 10) {
+          const w = Math.min(bz1 - 4 - z, 12 + rng() * 18);
+          const depth = 20 + rng() * 18;
+          const style = rng() < 0.3 ? 'glass' : 'prewar';
+          let h = style === 'glass' ? 70 + Math.pow(rng(), 1.5) * 170 : 22 + Math.pow(rng(), 1.8) * 110;
+          const xi = SIDE + (rng() < 0.2 ? 1.5 : 0);
+          const xo = xi + depth;
+          building(s > 0 ? xi : -xo, z, s > 0 ? xo : -xi, z + w - 0.3, h, style);
+          z += w;
+        }
+      }
+      // 뒷줄 (교차로에서 보이는 스카이라인)
+      let z2 = bz0 + 4;
+      while (z2 < bz1 - 10) {
+        const w = Math.min(bz1 - 4 - z2, 20 + rng() * 20);
+        const xi = 58 + rng() * 6, xo = xi + 30 + rng() * 50;
+        const style = rng() < 0.45 ? 'glass' : 'prewar';
+        const h = 40 + Math.pow(rng(), 1.6) * 200;
+        building(s > 0 ? xi : -xo, z2, s > 0 ? xo : -xi, z2 + w - 0.5, h, style);
+        z2 += w;
+      }
+      // 가로등, 가로수, 신호등
+      for (let zz = bz0 + 8; zz < bz1 - 4; zz += 26) streetLight(s * (ROAD + 0.6), zz, s);
+      for (let zz = bz0 + 20; zz < bz1 - 8; zz += 26) if (rng() < 0.8) tree(s * (ROAD + 2.4), zz);
+      signal(s * (ROAD + 0.7), bz0 + 1.2, s);
+    }
+    // 차량: 4개 차선
+    for (const lane of [-6.75, -2.25, 2.25, 6.75]) {
+      const dir = lane > 0 ? 1 : -1;
+      let z = bz0 + 2 + rng() * 8;
+      while (z < bz1 - 6) {
+        if (rng() < 0.55) car(lane + (rng() - 0.5) * 0.4, z + 2.3, dir);
+        z += 7 + rng() * 9;
+      }
+    }
+  }
+  // 원경 필러 빌딩 (도시 경계 너머)
+  for (let i = 0; i < 260; i++) {
+    const ang = rng() * Math.PI * 2;
+    let x = (rng() - 0.5) * 1600, z = (rng() - 0.5) * 2000 + 200;
+    if (Math.abs(x) < 160 && z > KMIN * P - 20 && z < KMAX * P + 20) continue;
+    const w = 20 + rng() * 40, d = 20 + rng() * 40, h = 30 + Math.pow(rng(), 1.5) * 220;
+    sb.box(x, 0, z, x + w, h, z + d, facade(rng() < 0.4 ? 'glass' : 'prewar'));
+    void ang;
+  }
+
+  return {
+    sb,
+    spawn: { pos: [0, 1.7, -18], yaw: Math.PI, pitch: 0.06 },
+    env: { sunAzimuth: 3.30, sunElevation: 0.2, sunIntensity: 4.5, fog: 0.0022, godrays: 1.0, exposure: 1.25, wheat: false },
+  };
+}
+
+// ---------------------------------------------------------------------------
+// Scene 2: 황금빛 밀밭 (밀 줄기는 셰이더에서 절차적 그리드로 교차 판정)
+// ---------------------------------------------------------------------------
+function buildWheatScene() {
+  const sb = new SceneBuilder();
+  const rng = mulberry32(77);
+  const mGround = sb.material({ albedo: [0.20, 0.14, 0.08], rough: 0.95, pattern: PAT.FARM });
+  const mBarn = sb.material({ albedo: [0.42, 0.07, 0.04], rough: 0.85 });
+  const mTrim = sb.material({ albedo: [0.80, 0.78, 0.72], rough: 0.7 });
+  const mRoof = sb.material({ albedo: [0.12, 0.12, 0.13], rough: 0.45, metal: 0.6 });
+  const mSilo = sb.material({ albedo: [0.62, 0.64, 0.66], rough: 0.35, metal: 0.8 });
+  const mTrunk = sb.material({ albedo: [0.14, 0.09, 0.05], rough: 0.95 });
+  const mLeaf = sb.material({ albedo: [0.08, 0.18, 0.04], rough: 0.85, pattern: PAT.FOLIAGE, color2: [0.22, 0.26, 0.05] });
+  const mHill = sb.material({ albedo: [0.14, 0.20, 0.06], rough: 0.95, pattern: PAT.FOLIAGE, color2: [0.32, 0.28, 0.10] });
+  const mWood = sb.material({ albedo: [0.30, 0.22, 0.14], rough: 0.9 });
+  const mHay = sb.material({ albedo: [0.70, 0.55, 0.25], rough: 0.95 });
+  const mHouse = sb.material({ albedo: [0.82, 0.80, 0.74], rough: 0.8, pattern: PAT.FACADE, p: [3.0, 2.6, 0.38, 0.06], color2: [0.7, 0.75, 0.8], p4: 3 });
+
+  sb.groundTiles(-1400, -1400, 1400, 1400, 24, mGround, 0);
+
+  // 박공 지붕 헛간
+  function gableBuilding(x0, z0, x1, z1, wallH, roofH, mWall, mRf) {
+    sb.box(x0, 0, z0, x1, wallH, z1, mWall, { collide: true });
+    const cx = (x0 + x1) / 2, o = 0.5;
+    const A = [x0 - o, wallH - 0.2, z0 - o], B = [x1 + o, wallH - 0.2, z0 - o], C = [x1 + o, wallH - 0.2, z1 + o], D = [x0 - o, wallH - 0.2, z1 + o];
+    const R0 = [cx, wallH + roofH, z0 - o], R1 = [cx, wallH + roofH, z1 + o];
+    sb.quad(A, R0, R1, D, mRf); sb.quad(B, C, R1, R0, mRf);
+    sb.quad(D, R1, R0, A, mRf); sb.quad(C, B, R0, R1, mRf); // 지붕 밑면 (양면 처리)
+    sb.tri([x0, wallH, z0], [x1, wallH, z0], [cx, wallH + roofH - 0.3, z0], null, null, null, mWall);
+    sb.tri([x1, wallH, z1], [x0, wallH, z1], [cx, wallH + roofH - 0.3, z1], null, null, null, mWall);
+  }
+  const BX = 26, BZ = 42;
+  gableBuilding(BX - 7, BZ - 10, BX + 7, BZ + 10, 6.5, 4.5, mBarn, mRoof);
+  // 헛간 문 테두리 (흰색 X자)
+  const dz = BZ - 10 - 0.08;
+  sb.box(BX - 2.6, 0, dz - 0.1, BX + 2.6, 0.25, dz, mTrim);
+  sb.box(BX - 2.6, 4.2, dz - 0.1, BX + 2.6, 4.45, dz, mTrim);
+  sb.box(BX - 2.6, 0, dz - 0.1, BX - 2.35, 4.45, dz, mTrim);
+  sb.box(BX + 2.35, 0, dz - 0.1, BX + 2.6, 4.45, dz, mTrim);
+  const dl = Math.hypot(5, 4.2);
+  for (const sgn of [-1, 1]) {
+    sb.obox([BX, 2.22, dz - 0.07], [sgn * 5 / dl * 2.5, 4.2 / dl * 2.5, 0], [-4.2 / dl * 0.12 * sgn, 5 / dl * 0.12, 0], [0, 0, 0.04], mTrim);
+  }
+  for (const cx of [BX - 7, BX + 7]) for (const cz of [BZ - 10, BZ + 10]) sb.box(cx - 0.2, 0, cz - 0.2, cx + 0.2, 6.6, cz + 0.2, mTrim);
+  // 사일로
+  sb.cylinder([BX + 11, 0, BZ + 4], [BX + 11, 15, BZ + 4], 3.2, 3.2, mSilo, 20, false);
+  sb.colliders.push({ min: [BX + 8, 0, BZ + 1], max: [BX + 14, 15, BZ + 7] });
+  sb.sphere([BX + 11, 15, BZ + 4], 3.2, mSilo, 20, 10, 0.6);
+  // 농가
+  gableBuilding(BX - 2, BZ + 16, BX + 9, BZ + 25, 5.0, 3.2, mHouse, mRoof);
+  // 건초 더미
+  for (let i = 0; i < 7; i++) {
+    const x = BX - 12 + rng() * 6, z = BZ - 12 + i * 3.2 + rng();
+    sb.cylinder([x - 0.65, 0.8, z], [x + 0.65, 0.8, z], 0.8, 0.8, mHay, 14, true);
+    sb.colliders.push({ min: [x - 0.7, 0, z - 0.8], max: [x + 0.7, 1.6, z + 0.8] });
+  }
+  // 큰 나무
+  function bigTree(x, z, s) {
+    sb.cylinder([x, 0, z], [x, 6 * s, z], 0.55 * s, 0.32 * s, mTrunk, 10, false);
+    sb.colliders.push({ min: [x - 0.6 * s, 0, z - 0.6 * s], max: [x + 0.6 * s, 6 * s, z + 0.6 * s] });
+    sb.cylinder([x, 4.5 * s, z], [x + 2.5 * s, 7.5 * s, z + 1 * s], 0.25 * s, 0.15 * s, mTrunk, 6, false);
+    sb.cylinder([x, 5 * s, z], [x - 2 * s, 8 * s, z - 1.5 * s], 0.25 * s, 0.15 * s, mTrunk, 6, false);
+    for (let i = 0; i < 7; i++) {
+      const a = (i / 7) * Math.PI * 2 + rng();
+      const rr = i === 0 ? 0 : 2.6 * s;
+      sb.sphere([x + Math.cos(a) * rr, (8.5 + rng() * 2) * s, z + Math.sin(a) * rr], (2.8 + rng() * 1.2) * s, mLeaf, 10, 7, 0.8, 0.3, rng, true);
+    }
+  }
+  bigTree(-9, 18, 1.0);
+  // 길가 울타리 (경로를 따라)
+  for (let z = -60; z < 80; z += 3.2) {
+    const z2 = z + 3.2;
+    for (const side of [-1, 1]) {
+      const x = pathX(z) + side * 1.7, xx = pathX(z2) + side * 1.7;
+      sb.box(x - 0.07, 0, z - 0.07, x + 0.07, 1.15, z + 0.07, mWood);
+      const c = [(x + xx) / 2, 0.85, (z + z2) / 2];
+      const ax = [(xx - x) / 2, 0, (z2 - z) / 2];
+      sb.obox(c, ax, [0, 0.05, 0], [0.03, 0, 0], mWood);
+    }
+  }
+  // 먼 언덕 (링 메시)
+  const NA = 120, NR = 10, R0 = 380, R1 = 1300;
+  const hill = (a, r) => {
+    const t = (r - R0) / (R1 - R0);
+    const n = Math.sin(a * 3 + 1.3) * 0.5 + Math.sin(a * 7.1 + 0.4) * 0.3 + Math.sin(a * 13.7 + 2.0) * 0.2;
+    return Math.max(0, Math.sin(t * Math.PI) * (55 + 60 * n) * Math.min(1, t * 4));
+  };
+  const hp = [];
+  for (let j = 0; j <= NR; j++) {
+    const row = [];
+    for (let i = 0; i <= NA; i++) {
+      const a = (i / NA) * Math.PI * 2, r = lerp(R0, R1, j / NR);
+      row.push([Math.cos(a) * r, hill(a, r) - 0.5, Math.sin(a) * r]);
+    }
+    hp.push(row);
+  }
+  for (let j = 0; j < NR; j++) for (let i = 0; i < NA; i++) {
+    sb.quad(hp[j][i], hp[j][i + 1], hp[j + 1][i + 1], hp[j + 1][i], mHill);
+  }
+  // 원경 나무 군락
+  for (let i = 0; i < 110; i++) {
+    const a = rng() * Math.PI * 2, r = 230 + rng() * 140;
+    const x = Math.cos(a) * r, z = Math.sin(a) * r, s = 0.8 + rng() * 0.9;
+    sb.cylinder([x, 0, z], [x, 4 * s, z], 0.4 * s, 0.25 * s, mTrunk, 5, false);
+    sb.sphere([x, 6 * s, z], 3.5 * s, mLeaf, 8, 5, 0.9, 0.35, rng, true);
+  }
+  return {
+    sb,
+    spawn: { pos: [pathX(-30), 1.7, -30], yaw: Math.PI, pitch: -0.05 },
+    env: { sunAzimuth: 1.25, sunElevation: 0.13, sunIntensity: 4.2, fog: 0.0016, godrays: 0.7, exposure: 1.1, wheat: true },
+  };
+}
+
+// ---------------------------------------------------------------------------
+// Scene 3: 재질 쇼케이스 (기존 기본 장면)
+// ---------------------------------------------------------------------------
+function buildShowcaseScene() {
+  const sb = new SceneBuilder();
+  const floor = sb.material({ albedo: [0.55, 0.56, 0.6], rough: 0.25, pattern: PAT.CHECKER, color2: [0.12, 0.12, 0.14] });
+  sb.groundTiles(-200, -200, 200, 200, 8, floor, 0);
+  sb.sphere([-3, 1.3, 0], 1.3, sb.material({ albedo: [0.95, 0.95, 0.95], metal: 1, rough: 0.02 }), 48, 32);
+  sb.sphere([0, 1.3, 0], 1.3, sb.material({ albedo: [1.0, 0.78, 0.39], metal: 1, rough: 0.2 }), 48, 32);
+  sb.sphere([3, 1.3, 0], 1.3, sb.material({ albedo: [1, 1, 1], transmission: 1, ior: 1.5, rough: 0 }), 48, 32);
+  sb.sphere([6, 1.0, 1.5], 1.0, sb.material({ albedo: [0.7, 0.05, 0.04], rough: 0.35, spec: 0.05 }), 40, 28);
+  sb.sphere([-6, 1.0, 1.5], 1.0, sb.material({ albedo: [0.95, 0.55, 0.4], metal: 1, rough: 0.45 }), 40, 28);
+  sb.box(-0.6, 0, -4.0, 1.0, 1.6, -2.4, sb.material({ albedo: [0.18, 0.62, 0.56], rough: 0.55 }), { collide: true });
+  sb.box(-12, 0, -9, 12, 5, -8.2, sb.material({ albedo: [0.7, 0.7, 0.72], rough: 0.9 }), { collide: true });
+  for (const [x, z] of [[-3, 0], [0, 0], [3, 0], [6, 1.5], [-6, 1.5]]) sb.colliders.push({ min: [x - 1.3, 0, z - 1.3], max: [x + 1.3, 2.6, z + 1.3] });
+  return {
+    sb,
+    spawn: { pos: [0, 1.7, 9], yaw: 0, pitch: -0.12 },
+    env: { sunAzimuth: 0.7, sunElevation: 0.75, sunIntensity: 3.5, fog: 0.0008, godrays: 0.3, exposure: 1.0, wheat: false },
+  };
+}
+
+// ---------------------------------------------------------------------------
+// BVH: 비닝 SAH 빌드 → "자식 AABB를 부모가 보관"하는 2-wide 레이아웃
+//   GPU 노드 (64B): [lmin, lData] [lmax, rData] [rmin, lCount] [rmax, rCount]
+//   count > 0 이면 리프(data = 첫 삼각형), 0 이면 내부 노드(data = 노드 인덱스)
+// ---------------------------------------------------------------------------
+function buildBVH(sb) {
+  const N = sb.triCount;
+  const P = sb.pos;
+  const bmin = new Float32Array(N * 3), bmax = new Float32Array(N * 3), cen = new Float32Array(N * 3);
+  for (let i = 0; i < N; i++) {
+    for (let k = 0; k < 3; k++) {
+      const a = P[i * 9 + k], b = P[i * 9 + 3 + k], c = P[i * 9 + 6 + k];
+      const mn = Math.min(a, b, c), mx = Math.max(a, b, c);
+      bmin[i * 3 + k] = mn; bmax[i * 3 + k] = mx; cen[i * 3 + k] = (mn + mx) * 0.5;
+    }
+  }
+  const idx = new Uint32Array(N); for (let i = 0; i < N; i++) idx[i] = i;
+  const BINS = 16;
+  const binMin = new Float32Array(BINS * 3), binMax = new Float32Array(BINS * 3), binCnt = new Uint32Array(BINS);
+  const rA = new Float32Array(BINS), rN = new Uint32Array(BINS);
+  const area = (x0, y0, z0, x1, y1, z1) => { const dx = x1 - x0, dy = y1 - y0, dz = z1 - z0; return dx * dy + dy * dz + dz * dx; };
+
+  // 바이너리 트리 노드
+  const nodes = []; // {mn:[3], mx:[3], first, count, left, right}
+  function bounds(s, e) {
     const mn = [Infinity, Infinity, Infinity], mx = [-Infinity, -Infinity, -Infinity];
-    for (let i = start; i < end; i++) triBounds(order[i], mn, mx);
-    const node = { mn, mx, leftFirst: start, triCount: end - start };
-    nodes.push(node);
-
-    const n = end - start;
-    if (n <= 4 || depth >= 24) return ni;
-
     const cmn = [Infinity, Infinity, Infinity], cmx = [-Infinity, -Infinity, -Infinity];
-    for (let i = start; i < end; i++) {
-      const c = cent[order[i]];
-      for (let k = 0; k < 3; k++) { cmn[k] = Math.min(cmn[k], c[k]); cmx[k] = Math.max(cmx[k], c[k]); }
+    for (let i = s; i < e; i++) {
+      const t = idx[i] * 3;
+      for (let k = 0; k < 3; k++) {
+        if (bmin[t + k] < mn[k]) mn[k] = bmin[t + k];
+        if (bmax[t + k] > mx[k]) mx[k] = bmax[t + k];
+        if (cen[t + k] < cmn[k]) cmn[k] = cen[t + k];
+        if (cen[t + k] > cmx[k]) cmx[k] = cen[t + k];
+      }
     }
-    let axis = 0;
-    let ext = cmx[0] - cmn[0];
-    if (cmx[1] - cmn[1] > ext) { ext = cmx[1] - cmn[1]; axis = 1; }
-    if (cmx[2] - cmn[2] > ext) { ext = cmx[2] - cmn[2]; axis = 2; }
-    if (ext <= 1e-9) return ni;
-
-    const mid = (cmn[axis] + cmx[axis]) * 0.5;
-    let i = start, j = end - 1;
-    while (i <= j) {
-      if (cent[order[i]][axis] < mid) i++;
-      else { const tmp = order[i]; order[i] = order[j]; order[j] = tmp; j--; }
+    return { mn, mx, cmn, cmx };
+  }
+  const root = { s: 0, e: N, depth: 0 };
+  const work = [root];
+  root.node = { first: 0, count: N, left: -1, right: -1 };
+  nodes.push(root.node);
+  while (work.length) {
+    const job = work.pop();
+    const { s, e, depth, node } = job;
+    const b = bounds(s, e);
+    node.mn = b.mn; node.mx = b.mx;
+    const n = e - s;
+    const forceSplit = job === root;
+    if ((n <= 2 && !forceSplit) || depth > 38) continue;
+    // SAH (3축 x 16빈)
+    let bestCost = Infinity, bestAxis = -1, bestSplit = -1;
+    for (let axis = 0; axis < 3; axis++) {
+      const c0 = b.cmn[axis], c1 = b.cmx[axis];
+      if (c1 - c0 < 1e-7) continue;
+      const scale = BINS / (c1 - c0);
+      binCnt.fill(0); binMin.fill(Infinity); binMax.fill(-Infinity);
+      for (let i = s; i < e; i++) {
+        const t = idx[i] * 3;
+        let bi = ((cen[t + axis] - c0) * scale) | 0; if (bi >= BINS) bi = BINS - 1;
+        binCnt[bi]++;
+        for (let k = 0; k < 3; k++) {
+          if (bmin[t + k] < binMin[bi * 3 + k]) binMin[bi * 3 + k] = bmin[t + k];
+          if (bmax[t + k] > binMax[bi * 3 + k]) binMax[bi * 3 + k] = bmax[t + k];
+        }
+      }
+      // 오른쪽 누적
+      let x0 = Infinity, y0 = Infinity, z0 = Infinity, x1 = -Infinity, y1 = -Infinity, z1 = -Infinity, cnt = 0;
+      for (let i = BINS - 1; i > 0; i--) {
+        cnt += binCnt[i];
+        if (binCnt[i]) {
+          x0 = Math.min(x0, binMin[i * 3]); y0 = Math.min(y0, binMin[i * 3 + 1]); z0 = Math.min(z0, binMin[i * 3 + 2]);
+          x1 = Math.max(x1, binMax[i * 3]); y1 = Math.max(y1, binMax[i * 3 + 1]); z1 = Math.max(z1, binMax[i * 3 + 2]);
+        }
+        rN[i] = cnt; rA[i] = cnt ? area(x0, y0, z0, x1, y1, z1) : 0;
+      }
+      x0 = y0 = z0 = Infinity; x1 = y1 = z1 = -Infinity; cnt = 0;
+      for (let i = 0; i < BINS - 1; i++) {
+        cnt += binCnt[i];
+        if (binCnt[i]) {
+          x0 = Math.min(x0, binMin[i * 3]); y0 = Math.min(y0, binMin[i * 3 + 1]); z0 = Math.min(z0, binMin[i * 3 + 2]);
+          x1 = Math.max(x1, binMax[i * 3]); y1 = Math.max(y1, binMax[i * 3 + 1]); z1 = Math.max(z1, binMax[i * 3 + 2]);
+        }
+        if (!cnt || !rN[i + 1]) continue;
+        const cost = cnt * area(x0, y0, z0, x1, y1, z1) + rN[i + 1] * rA[i + 1];
+        if (cost < bestCost) { bestCost = cost; bestAxis = axis; bestSplit = i; }
+      }
     }
-    let split = i;
-    if (split === start || split === end) split = (start + end) >> 1;
-
-    node.triCount = 0;
-    const left = build(start, split, depth + 1);
-    build(split, end, depth + 1);
-    node.leftFirst = left;
-    return ni;
+    const pa = area(b.mn[0], b.mn[1], b.mn[2], b.mx[0], b.mx[1], b.mx[2]);
+    const leafCost = n * pa;
+    let mid;
+    if (bestAxis >= 0 && (bestCost + pa * 1.0 < leafCost || n > 6 || forceSplit)) {
+      const c0 = b.cmn[bestAxis], scale = BINS / (b.cmx[bestAxis] - c0);
+      let i = s, j = e - 1;
+      while (i <= j) {
+        let bi = ((cen[idx[i] * 3 + bestAxis] - c0) * scale) | 0; if (bi >= BINS) bi = BINS - 1;
+        if (bi <= bestSplit) i++;
+        else { const tmp = idx[i]; idx[i] = idx[j]; idx[j] = tmp; j--; }
+      }
+      mid = i;
+      if (mid === s || mid === e) mid = (s + e) >> 1;
+    } else if (n > 6 || forceSplit) {
+      mid = (s + e) >> 1; // 중심 겹침(동일 위치) — 중간에서 강제 분할
+    } else continue;
+    const L = { first: s, count: mid - s, left: -1, right: -1 };
+    const R = { first: mid, count: e - mid, left: -1, right: -1 };
+    node.count = 0; node.left = nodes.length; nodes.push(L); node.right = nodes.length; nodes.push(R);
+    work.push({ s, e: mid, depth: depth + 1, node: L }, { s: mid, e, depth: depth + 1, node: R });
   }
-
-  if (tris.length > 0) build(0, tris.length, 0);
-  else nodes.push({ mn: [0, 0, 0], mx: [0, 0, 0], leftFirst: 0, triCount: 0 });
-
-  const nodeBuf = new ArrayBuffer(nodes.length * 32);
-  const nf = new Float32Array(nodeBuf);
-  const nu = new Uint32Array(nodeBuf);
-  for (let i = 0; i < nodes.length; i++) {
-    const o = i * 8;
-    const nd = nodes[i];
-    nf[o + 0] = nd.mn[0]; nf[o + 1] = nd.mn[1]; nf[o + 2] = nd.mn[2]; nu[o + 3] = nd.leftFirst >>> 0;
-    nf[o + 4] = nd.mx[0]; nf[o + 5] = nd.mx[1]; nf[o + 6] = nd.mx[2]; nu[o + 7] = nd.triCount >>> 0;
+  // 내부 노드만 GPU 노드로 변환
+  const gpuIndex = new Int32Array(nodes.length).fill(-1);
+  let gcount = 0;
+  const order = [0];
+  while (order.length) {
+    const ni = order.pop();
+    const nd = nodes[ni];
+    if (nd.count > 0) continue;
+    gpuIndex[ni] = gcount++;
+    order.push(nd.right, nd.left);
   }
-  const reordered = order.map((i) => tris[i]);
-  return { nodeBuf, nodeCount: nodes.length, tris: reordered };
-}
-
-function packTriangles(tris) {
-  const buf = new ArrayBuffer(Math.max(1, tris.length) * 96);
-  const f = new Float32Array(buf);
-  const u = new Uint32Array(buf);
-  for (let i = 0; i < tris.length; i++) {
-    const o = i * 24;
-    const t = tris[i];
-    f[o + 0] = t.v0[0]; f[o + 1] = t.v0[1]; f[o + 2] = t.v0[2];
-    f[o + 4] = t.v1[0]; f[o + 5] = t.v1[1]; f[o + 6] = t.v1[2];
-    f[o + 8] = t.v2[0]; f[o + 9] = t.v2[1]; f[o + 10] = t.v2[2]; u[o + 11] = t.matIdx >>> 0;
-    f[o + 12] = t.n0[0]; f[o + 13] = t.n0[1]; f[o + 14] = t.n0[2];
-    f[o + 16] = t.n1[0]; f[o + 17] = t.n1[1]; f[o + 18] = t.n1[2];
-    f[o + 20] = t.n2[0]; f[o + 21] = t.n2[1]; f[o + 22] = t.n2[2];
+  const buf = new ArrayBuffer(Math.max(1, gcount) * 64);
+  const f = new Float32Array(buf), u = new Uint32Array(buf);
+  for (let ni = 0; ni < nodes.length; ni++) {
+    const gi = gpuIndex[ni]; if (gi < 0) continue;
+    const nd = nodes[ni], L = nodes[nd.left], R = nodes[nd.right];
+    const o = gi * 16;
+    f[o + 0] = L.mn[0]; f[o + 1] = L.mn[1]; f[o + 2] = L.mn[2]; u[o + 3] = L.count > 0 ? L.first : gpuIndex[nd.left];
+    f[o + 4] = L.mx[0]; f[o + 5] = L.mx[1]; f[o + 6] = L.mx[2]; u[o + 7] = R.count > 0 ? R.first : gpuIndex[nd.right];
+    f[o + 8] = R.mn[0]; f[o + 9] = R.mn[1]; f[o + 10] = R.mn[2]; u[o + 11] = L.count;
+    f[o + 12] = R.mx[0]; f[o + 13] = R.mx[1]; f[o + 14] = R.mx[2]; u[o + 15] = R.count;
   }
-  return buf;
+  // 삼각형 재배열 + 패킹: geo = [v0,mat][e1,0][e2,0], nrm = oct 패킹 3개
+  const geo = new ArrayBuffer(Math.max(1, N) * 48), gf = new Float32Array(geo), gu = new Uint32Array(geo);
+  const nrm = new Uint32Array(Math.max(1, N) * 4);
+  const oct = (x, y, z) => {
+    const l = Math.abs(x) + Math.abs(y) + Math.abs(z) || 1;
+    let px = x / l, py = y / l;
+    if (z < 0) { const ox = px; px = (1 - Math.abs(py)) * (ox >= 0 ? 1 : -1); py = (1 - Math.abs(ox)) * (py >= 0 ? 1 : -1); }
+    const q = (v) => Math.round(Math.max(-1, Math.min(1, v)) * 32767) & 0xffff;
+    return (q(px) | (q(py) << 16)) >>> 0;
+  };
+  const Nn = sb.nrm;
+  for (let i = 0; i < N; i++) {
+    const t = idx[i], p = t * 9, o = i * 12;
+    gf[o] = P[p]; gf[o + 1] = P[p + 1]; gf[o + 2] = P[p + 2]; gu[o + 3] = sb.mat[t];
+    gf[o + 4] = P[p + 3] - P[p]; gf[o + 5] = P[p + 4] - P[p + 1]; gf[o + 6] = P[p + 5] - P[p + 2];
+    gf[o + 8] = P[p + 6] - P[p]; gf[o + 9] = P[p + 7] - P[p + 1]; gf[o + 10] = P[p + 8] - P[p + 2];
+    nrm[i * 4] = oct(Nn[p], Nn[p + 1], Nn[p + 2]);
+    nrm[i * 4 + 1] = oct(Nn[p + 3], Nn[p + 4], Nn[p + 5]);
+    nrm[i * 4 + 2] = oct(Nn[p + 6], Nn[p + 7], Nn[p + 8]);
+  }
+  return { nodeBuf: buf, nodeCount: gcount, geo, nrm };
 }
 
 function packMaterials(mats) {
-  const buf = new ArrayBuffer(Math.max(1, mats.length) * 48);
-  const f = new Float32Array(buf);
-  for (let i = 0; i < mats.length; i++) {
-    const o = i * 12;
-    const m = mats[i];
-    f[o + 0] = m.baseColor[0]; f[o + 1] = m.baseColor[1]; f[o + 2] = m.baseColor[2]; f[o + 3] = m.metalness;
-    f[o + 4] = m.emission[0]; f[o + 5] = m.emission[1]; f[o + 6] = m.emission[2]; f[o + 7] = m.roughness;
-    f[o + 8] = m.transmission; f[o + 9] = m.ior;
-  }
+  const buf = new Float32Array(Math.max(1, mats.length) * 20);
+  mats.forEach((m, i) => {
+    const o = i * 20;
+    buf.set([...m.albedo, m.rough, ...m.emission, m.metal, m.spec, m.transmission, m.ior, m.pattern, ...m.p, ...m.color2, m.p4], o);
+  });
   return buf;
-}
-
-// ---------------------------------------------------------------------------
-// GPU scene buffers
-// ---------------------------------------------------------------------------
-let bvhBuffer, triBuffer, matBuffer;
-
-function uploadScene() {
-  hStatus.textContent = 'building BVH';
-  let bvh;
-  try {
-    bvh = buildBVH(triList);
-  } catch (e) {
-    hStatus.textContent = 'BVH error';
-    console.error(e);
-    return;
-  }
-  const triBuf = packTriangles(bvh.tris);
-  const matBuf = packMaterials(materials.length ? materials : [{ baseColor: [0.8, 0.8, 0.8], metalness: 0, roughness: 1, emission: [0, 0, 0], transmission: 0, ior: 1.5 }]);
-
-  if (bvhBuffer) bvhBuffer.destroy();
-  if (triBuffer) triBuffer.destroy();
-  if (matBuffer) matBuffer.destroy();
-
-  bvhBuffer = device.createBuffer({ size: bvh.nodeBuf.byteLength, usage: GPUBufferUsage.STORAGE | GPUBufferUsage.COPY_DST });
-  device.queue.writeBuffer(bvhBuffer, 0, bvh.nodeBuf);
-  triBuffer = device.createBuffer({ size: triBuf.byteLength, usage: GPUBufferUsage.STORAGE | GPUBufferUsage.COPY_DST });
-  device.queue.writeBuffer(triBuffer, 0, triBuf);
-  matBuffer = device.createBuffer({ size: matBuf.byteLength, usage: GPUBufferUsage.STORAGE | GPUBufferUsage.COPY_DST });
-  device.queue.writeBuffer(matBuffer, 0, matBuf);
-
-  hStatus.textContent = `tris ${triList.length}`;
-  rebuildComputeBindGroup();
-  resetAccum();
 }
 
 // ---------------------------------------------------------------------------
@@ -333,476 +780,1097 @@ const computeWGSL = /* wgsl */`
 struct Uniforms {
   invProj: mat4x4f,
   invView: mat4x4f,
-  cameraPos: vec3f, frame: f32,
-  width: u32, height: u32, bounces: u32, maxSamples: u32,
-  envIntensity: f32, sunAzimuth: f32, sunElevation: f32, sunSize: f32,
-  sunIntensity: f32, p0: f32, p1: f32, p2: f32,
-  skyZenith: vec3f, p3: f32,
-  skyHorizon: vec3f, p4: f32,
-  groundColor: vec3f, p5: f32,
-  sunColor: vec3f, p6: f32,
+  prevViewProj: mat4x4f,
+  camPos: vec4f,        // w = frame
+  dims: vec4u,          // w, h, prevW, prevH
+  cfg: vec4u,           // bounces, flags, _, _
+  sunDir: vec4f,        // w = cos(sun radius)
+  sunE: vec4f,          // 태양 조도(irradiance) rgb, w = 태양 원반 입체각
+  sunTint: vec4f,       // w = night factor
+  zenith: vec4f,        // w = fog density
+  horizon: vec4f,       // w = godray strength
+  ground: vec4f,        // w = env intensity
+  hist: vec4f,          // x = static history cap, y = moving cap, z = time, w = wheat LOD dist
 };
 
-struct BVHNode { aabbMin: vec3f, leftFirst: u32, aabbMax: vec3f, triCount: u32 };
-struct Triangle {
-  v0: vec3f, pad0: f32,
-  v1: vec3f, pad1: f32,
-  v2: vec3f, matIdx: u32,
-  n0: vec3f, pad3: f32,
-  n1: vec3f, pad4: f32,
-  n2: vec3f, pad5: f32,
-};
 struct Material {
-  baseColor: vec3f, metalness: f32,
-  emission: vec3f, roughness: f32,
-  transmission: f32, ior: f32, mp0: f32, mp1: f32,
+  albedo: vec3f, rough: f32,
+  emission: vec3f, metal: f32,
+  spec: f32, transmission: f32, ior: f32, pattern: f32,
+  p: vec4f,
+  color2: vec3f, p4: f32,
 };
 
-@group(0) @binding(0) var<uniform> uniforms: Uniforms;
-@group(0) @binding(1) var<storage, read> bvhNodes: array<BVHNode>;
-@group(0) @binding(2) var<storage, read> tris: array<Triangle>;
-@group(0) @binding(3) var<storage, read> mats: array<Material>;
-@group(0) @binding(4) var<storage, read_write> accum: array<vec4f>;
-@group(0) @binding(5) var outTex: texture_storage_2d<rgba16float, write>;
+@group(0) @binding(0) var<uniform> U: Uniforms;
+@group(0) @binding(1) var<storage, read> bvh: array<vec4f>;
+@group(0) @binding(2) var<storage, read> triGeo: array<vec4f>;
+@group(0) @binding(3) var<storage, read> triNrm: array<vec4u>;
+@group(0) @binding(4) var<storage, read> mats: array<Material>;
+@group(0) @binding(5) var<storage, read> histIn: array<vec4f>;
+@group(0) @binding(6) var<storage, read_write> histOut: array<vec4f>;
+@group(0) @binding(7) var colorTex: texture_storage_2d<rgba16float, write>;
+@group(0) @binding(8) var depthTex: texture_storage_2d<r32float, write>;
 
 const PI = 3.14159265359;
-const EPS = 1e-4;
+const INF = 1e30;
+const EPS = 2e-3;
+const FLAG_RESET = 1u;
+const FLAG_STATIC = 2u;
+const FLAG_WHEAT = 4u;
 
-struct Ray { o: vec3f, d: vec3f, tmin: f32, tmax: f32 };
-struct HitInfo { tri: i32, t: f32, u: f32, v: f32 };
-
+// ---------------- RNG / hash ----------------
 fn pcg(v: u32) -> u32 {
-  var s = v * 747796405u + 2891336453u;
-  var w = ((s >> ((s >> 28u) + 4u)) ^ s) * 277803737u;
+  let s = v * 747796405u + 2891336453u;
+  let w = ((s >> ((s >> 28u) + 4u)) ^ s) * 277803737u;
   return (w >> 22u) ^ w;
 }
-fn rand(seed: ptr<function,u32>) -> f32 {
+fn rand(seed: ptr<function, u32>) -> f32 {
   *seed = pcg(*seed);
-  return f32(*seed) / 4294967296.0;
+  return f32(*seed >> 8u) * (1.0 / 16777216.0);
 }
-fn rand2(s: ptr<function,u32>) -> vec2f { return vec2f(rand(s), rand(s)); }
-
-fn generateRay(px: vec2u, s: ptr<function,u32>) -> Ray {
-  let jitter = rand2(s) - 0.5;
-  let uv = (vec2f(px) + jitter + 0.5) / vec2f(f32(uniforms.width), f32(uniforms.height));
-  let ndc = uv * 2.0 - 1.0;
-  var clipPos = vec4f(ndc.x, -ndc.y, -1.0, 1.0);
-  var viewDir4 = uniforms.invProj * clipPos;
-  viewDir4 = vec4f(viewDir4.xyz / viewDir4.w, 0.0);
-  let worldDir = normalize((uniforms.invView * viewDir4).xyz);
-  return Ray(uniforms.cameraPos, worldDir, EPS, 1e30);
+fn rand2(s: ptr<function, u32>) -> vec2f { return vec2f(rand(s), rand(s)); }
+fn hash2i(c: vec2i, k: u32) -> u32 { return pcg((u32(c.x) * 1664525u) ^ pcg(u32(c.y) ^ k)); }
+fn hf(h: u32) -> f32 { return f32(h >> 8u) * (1.0 / 16777216.0); }
+fn hash4(c: vec2i, k: u32) -> vec4f {
+  let a = hash2i(c, k); let b = pcg(a); let d = pcg(b); let e = pcg(d);
+  return vec4f(hf(a), hf(b), hf(d), hf(e));
 }
-
-fn hitAABB(ray: Ray, mn: vec3f, mx: vec3f, t: f32) -> bool {
-  let inv = 1.0 / ray.d;
-  let t0 = (mn - ray.o) * inv;
-  let t1 = (mx - ray.o) * inv;
-  let tsm = min(t0, t1);
-  let tbg = max(t0, t1);
-  let tnear = max(max(tsm.x, tsm.y), tsm.z);
-  let tfar = min(min(tbg.x, tbg.y), tbg.z);
-  return tnear <= tfar && tfar >= ray.tmin && tnear <= t;
+fn vnoise(p: vec2f) -> f32 {
+  let i = vec2i(floor(p)); let f = fract(p);
+  let u = f * f * (3.0 - 2.0 * f);
+  let a = hf(hash2i(i, 11u)); let b = hf(hash2i(i + vec2i(1, 0), 11u));
+  let c = hf(hash2i(i + vec2i(0, 1), 11u)); let d = hf(hash2i(i + vec2i(1, 1), 11u));
+  return mix(mix(a, b, u.x), mix(c, d, u.x), u.y);
 }
+fn fbm(p: vec2f) -> f32 { return vnoise(p) * 0.55 + vnoise(p * 2.13 + 7.1) * 0.3 + vnoise(p * 4.37 + 3.3) * 0.15; }
+fn lum(c: vec3f) -> f32 { return dot(c, vec3f(0.2126, 0.7152, 0.0722)); }
 
-fn hitTriangle(ray: Ray, ti: u32, best: ptr<function,HitInfo>) {
-  let tr = tris[ti];
-  let e1 = tr.v1 - tr.v0;
-  let e2 = tr.v2 - tr.v0;
-  let p = cross(ray.d, e2);
-  let det = dot(e1, p);
-  if abs(det) < 1e-9 { return; }
-  let invDet = 1.0 / det;
-  let tv = ray.o - tr.v0;
-  let u = dot(tv, p) * invDet;
-  if u < 0.0 || u > 1.0 { return; }
-  let q = cross(tv, e1);
-  let v = dot(ray.d, q) * invDet;
-  if v < 0.0 || u + v > 1.0 { return; }
-  let t = dot(e2, q) * invDet;
-  if t > ray.tmin && t < (*best).t {
-    (*best).t = t; (*best).tri = i32(ti); (*best).u = u; (*best).v = v;
+fn octDecode(p: u32) -> vec3f {
+  let e = unpack2x16snorm(p);
+  var n = vec3f(e.x, e.y, 1.0 - abs(e.x) - abs(e.y));
+  if n.z < 0.0 {
+    let ox = n.x;
+    n.x = (1.0 - abs(n.y)) * select(-1.0, 1.0, ox >= 0.0);
+    n.y = (1.0 - abs(ox)) * select(-1.0, 1.0, n.y >= 0.0);
   }
+  return normalize(n);
+}
+fn octEncode(n: vec3f) -> u32 {
+  var p = n.xy / (abs(n.x) + abs(n.y) + abs(n.z));
+  if n.z < 0.0 {
+    p = (1.0 - abs(p.yx)) * select(vec2f(-1.0), vec2f(1.0), p >= vec2f(0.0));
+  }
+  return pack2x16snorm(p);
 }
 
-fn intersect(ray: Ray) -> HitInfo {
-  var best = HitInfo(-1, ray.tmax, 0.0, 0.0);
-  var stack: array<u32, 32>;
+// ---------------- Hit record ----------------
+struct Hit {
+  t: f32,
+  kind: u32,     // 0 miss, 1 triangle, 2 wheat stem, 3 wheat head, 4 wheat canopy (LOD)
+  id: u32,
+  u: f32, v: f32,
+  n: vec3f,      // 절차적 지오메트리 법선
+  col: vec3f,    // 절차적 지오메트리 색
+};
+
+// ---------------- Triangles / BVH ----------------
+fn slab(o: vec3f, inv: vec3f, mn: vec3f, mx: vec3f, tmax: f32) -> f32 {
+  let t0 = (mn - o) * inv;
+  let t1 = (mx - o) * inv;
+  let tn = max(max(min(t0.x, t1.x), min(t0.y, t1.y)), max(min(t0.z, t1.z), 0.0));
+  let tf = min(min(max(t0.x, t1.x), max(t0.y, t1.y)), min(max(t0.z, t1.z), tmax));
+  return select(INF, tn, tn <= tf);
+}
+
+fn triTest(o: vec3f, d: vec3f, i: u32, tmax: f32) -> vec3f {
+  let a = triGeo[i * 3u];
+  let e1 = triGeo[i * 3u + 1u].xyz;
+  let e2 = triGeo[i * 3u + 2u].xyz;
+  let p = cross(d, e2);
+  let det = dot(e1, p);
+  if abs(det) < 1e-14 { return vec3f(-1.0); }
+  let inv = 1.0 / det;
+  let tv = o - a.xyz;
+  let u = dot(tv, p) * inv;
+  if u < 0.0 || u > 1.0 { return vec3f(-1.0); }
+  let q = cross(tv, e1);
+  let v = dot(d, q) * inv;
+  if v < 0.0 || u + v > 1.0 { return vec3f(-1.0); }
+  let t = dot(e2, q) * inv;
+  if t <= 0.0 || t >= tmax { return vec3f(-1.0); }
+  return vec3f(t, u, v);
+}
+
+fn traceBVH(o: vec3f, d: vec3f, tmax: f32, best: ptr<function, Hit>, anyHit: bool) -> bool {
+  let inv = 1.0 / select(d, vec3f(1e-12), abs(d) < vec3f(1e-12));
+  var stackN: array<u32, 40>;
+  var stackT: array<f32, 40>;
   var sp = 0u;
-  stack[sp] = 0u; sp = sp + 1u;
+  var cur = 0u;
+  var tm = tmax;
   loop {
-    if sp == 0u { break; }
-    sp = sp - 1u;
-    let n = bvhNodes[stack[sp]];
-    if !hitAABB(ray, n.aabbMin, n.aabbMax, best.t) { continue; }
-    if n.triCount > 0u {
-      for (var i = 0u; i < n.triCount; i = i + 1u) {
-        hitTriangle(ray, n.leftFirst + i, &best);
+    let a = bvh[cur * 4u];
+    let b = bvh[cur * 4u + 1u];
+    let c = bvh[cur * 4u + 2u];
+    let e = bvh[cur * 4u + 3u];
+    let li = bitcast<u32>(a.w); let ri = bitcast<u32>(b.w);
+    let lc = bitcast<u32>(c.w); let rc = bitcast<u32>(e.w);
+    var tl = slab(o, inv, a.xyz, b.xyz, tm);
+    var tr = slab(o, inv, c.xyz, e.xyz, tm);
+    if lc > 0u && tl < tm {
+      for (var k = 0u; k < lc; k++) {
+        let h = triTest(o, d, li + k, tm);
+        if h.x > 0.0 {
+          if anyHit { return true; }
+          tm = h.x; (*best).t = h.x; (*best).kind = 1u; (*best).id = li + k; (*best).u = h.y; (*best).v = h.z;
+        }
       }
-    } else {
-      if sp < 30u {
-        stack[sp] = n.leftFirst; sp = sp + 1u;
-        stack[sp] = n.leftFirst + 1u; sp = sp + 1u;
+      tl = INF;
+    }
+    if rc > 0u && tr < tm {
+      for (var k = 0u; k < rc; k++) {
+        let h = triTest(o, d, ri + k, tm);
+        if h.x > 0.0 {
+          if anyHit { return true; }
+          tm = h.x; (*best).t = h.x; (*best).kind = 1u; (*best).id = ri + k; (*best).u = h.y; (*best).v = h.z;
+        }
+      }
+      tr = INF;
+    }
+    if lc > 0u { tl = INF; }
+    if rc > 0u { tr = INF; }
+    let hitL = tl < tm;
+    let hitR = tr < tm;
+    if hitL && hitR {
+      // 가까운 자식 먼저, 먼 자식은 스택 (진입 거리도 함께 저장해 pop 시 컬링)
+      if tl <= tr { stackN[sp] = ri; stackT[sp] = tr; cur = li; }
+      else { stackN[sp] = li; stackT[sp] = tl; cur = ri; }
+      sp = min(sp + 1u, 39u);
+      continue;
+    }
+    if hitL { cur = li; continue; }
+    if hitR { cur = ri; continue; }
+    // pop
+    var found = false;
+    loop {
+      if sp == 0u { break; }
+      sp -= 1u;
+      if stackT[sp] < tm { cur = stackN[sp]; found = true; break; }
+    }
+    if !found { break; }
+  }
+  return false;
+}
+
+// ---------------- 절차적 밀밭 ----------------
+const WCELL = 0.11;
+const WHMAX = 1.22;
+const WCANOPY = 0.93;
+
+fn pathX(z: f32) -> f32 { return 4.0 * sin(z * 0.035) + 1.5 * sin(z * 0.011 + 1.0); }
+fn fieldMask(p: vec2f) -> bool {
+  if abs(p.x) > 210.0 || abs(p.y) > 210.0 { return false; }
+  if abs(p.x - pathX(p.y)) < 1.45 { return false; }
+  let by = p - vec2f(29.0, 48.0);
+  if abs(by.x) < 19.0 && abs(by.y) < 24.0 { return false; }
+  if length(p - vec2f(-9.0, 18.0)) < 5.0 { return false; }
+  // 트랙터 바퀴 자국 (트램라인)
+  let tl = fract((p.x + 3.0) / 18.0) * 18.0;
+  if tl < 0.32 || (tl > 1.9 && tl < 2.22) { return false; }
+  return true;
+}
+
+struct Stalk { c: vec2f, h: f32, lean: vec2f, tone: f32 };
+fn stalkAt(c: vec2i) -> Stalk {
+  let r = hash4(c, 3u);
+  let r2 = hash4(c, 9u);
+  let wp = (vec2f(c) + 0.5) * WCELL;
+  let pt = fbm(wp * 0.18);
+  var s: Stalk;
+  s.c = (vec2f(c) + 0.3 + 0.4 * r.xy) * WCELL;
+  s.h = 0.78 + 0.18 * r.z + 0.18 * pt;
+  s.lean = (r2.xy - 0.5) * 0.028;
+  s.tone = r.w * 0.6 + pt * 0.4;
+  return s;
+}
+
+// 셰어(기울어진) 원기둥: y 구간 [ylo, yhi]
+fn cylT(oq: vec2f, dq: vec2f, oy: f32, dy: f32, r: f32, ylo: f32, yhi: f32, tlo: f32, thi: f32) -> f32 {
+  let a = dot(dq, dq);
+  let b = dot(oq, dq);
+  let c = dot(oq, oq) - r * r;
+  if c < 0.0 || a < 1e-12 { return -1.0; }
+  let disc = b * b - a * c;
+  if disc < 0.0 { return -1.0; }
+  let t = (-b - sqrt(disc)) / a;
+  if t <= tlo || t >= thi { return -1.0; }
+  let y = oy + dy * t;
+  if y < ylo || y > yhi { return -1.0; }
+  return t;
+}
+
+fn wheatCell(o: vec3f, d: vec3f, cell: vec2i, tlo: f32, thi: f32, best: ptr<function, Hit>) -> bool {
+  let cc = (vec2f(cell) + 0.5) * WCELL;
+  if !fieldMask(cc) { return false; }
+  let s = stalkAt(cell);
+  let oq = o.xz - s.lean * o.y - s.c;
+  let dq = d.xz - s.lean * d.y;
+  let headLo = s.h - 0.13;
+  var t = cylT(oq, dq, o.y, d.y, 0.016, headLo, s.h, tlo, thi);
+  var kind = 3u;
+  let ts = cylT(oq, dq, o.y, d.y, 0.0055, 0.0, headLo, tlo, thi);
+  if ts > 0.0 && (t < 0.0 || ts < t) { t = ts; kind = 2u; }
+  if t < 0.0 { return false; }
+  let p = o + d * t;
+  let q = p.xz - s.lean * p.y - s.c;
+  var n = vec3f(q.x, 0.0, q.y);
+  if kind == 3u {
+    n = vec3f(q.x, ((p.y - (headLo + 0.065)) / 0.065) * 0.012, q.y);
+  }
+  (*best).t = t; (*best).kind = kind; (*best).n = normalize(n);
+  let gold = mix(vec3f(0.62, 0.42, 0.16), vec3f(0.82, 0.62, 0.30), s.tone);
+  if kind == 3u { (*best).col = gold; }
+  else { (*best).col = mix(vec3f(0.30, 0.30, 0.10), gold * 0.9, smoothstep(0.0, 0.6, p.y)); }
+  return true;
+}
+
+fn traceWheat(o: vec3f, d: vec3f, tmax: f32, best: ptr<function, Hit>) -> bool {
+  if abs(d.y) < 1e-6 && (o.y > WHMAX || o.y < 0.0) { return false; }
+  let iy = 1.0 / select(d.y, 1e-6, abs(d.y) < 1e-6);
+  let ty0 = (0.0 - o.y) * iy;
+  let ty1 = (WHMAX - o.y) * iy;
+  let tlo = max(0.0, min(ty0, ty1));
+  let thi = min(tmax, max(ty0, ty1));
+  if tlo >= thi { return false; }
+  let lod = U.hist.w;
+  let tEnd = min(thi, lod);
+  if tlo < tEnd {
+    // 2D DDA (xz)
+    let p0 = o + d * tlo;
+    var cell = vec2i(floor(p0.xz / WCELL));
+    let dxz = d.xz;
+    let stepv = vec2i(select(vec2i(-1), vec2i(1), dxz >= vec2f(0.0)));
+    let invd = 1.0 / select(dxz, vec2f(1e-9), abs(dxz) < vec2f(1e-9));
+    let nextB = (vec2f(cell) + select(vec2f(0.0), vec2f(1.0), dxz >= vec2f(0.0))) * WCELL;
+    var tMax = tlo + (nextB - p0.xz) * invd;
+    let tDelta = abs(WCELL * invd);
+    var tc = tlo;
+    for (var i = 0; i < 112; i++) {
+      let tn = min(tMax.x, tMax.y);
+      if wheatCell(o, d, cell, max(tc - 0.02, 0.0), min(tn + 0.02, tEnd), best) { return true; }
+      if tn >= tEnd { break; }
+      tc = tn;
+      if tMax.x < tMax.y { tMax.x += tDelta.x; cell.x += stepv.x; }
+      else { tMax.y += tDelta.y; cell.y += stepv.y; }
+      if i == 111 {
+        // 스텝 한계: 이 지점을 캐노피로 간주
+        let pp = o + d * tc;
+        if pp.y < WCANOPY && fieldMask(pp.xz) {
+          (*best).t = tc; (*best).kind = 4u; (*best).n = vec3f(0.0, 1.0, 0.0);
+          (*best).col = vec3f(0.55, 0.40, 0.17);
+          return true;
+        }
       }
     }
   }
-  return best;
+  if thi > lod {
+    // 원거리 LOD: 평균 색의 캐노피 평면
+    let ts = max(tlo, lod);
+    let ys = o.y + d.y * ts;
+    var tcn = -1.0;
+    if ys <= WCANOPY { tcn = ts; }
+    else if d.y < 0.0 { tcn = (WCANOPY - o.y) * iy; }
+    if tcn > 0.0 && tcn < thi {
+      let pp = o + d * tcn;
+      if fieldMask(pp.xz) {
+        (*best).t = tcn; (*best).kind = 4u; (*best).n = vec3f(0.0, 1.0, 0.0);
+        let tone = fbm(pp.xz * 0.18);
+        (*best).col = mix(vec3f(0.45, 0.31, 0.12), vec3f(0.62, 0.46, 0.20), tone);
+        return true;
+      }
+    }
+  }
+  return false;
 }
 
-fn buildBasis(n: vec3f) -> mat3x3f {
-  var t: vec3f;
-  if abs(n.x) > 0.1 { t = normalize(cross(vec3f(0.0,1.0,0.0), n)); }
-  else { t = normalize(cross(vec3f(1.0,0.0,0.0), n)); }
-  let b = cross(n, t);
-  return mat3x3f(t, b, n);
+fn intersect(o: vec3f, d: vec3f) -> Hit {
+  var h: Hit;
+  h.t = INF; h.kind = 0u;
+  traceBVH(o, d, INF, &h, false);
+  if (U.cfg.y & FLAG_WHEAT) != 0u {
+    var w = h;
+    if traceWheat(o, d, h.t, &w) { h = w; }
+  }
+  return h;
 }
 
-fn cosineSample(n: vec3f, s: ptr<function,u32>) -> vec3f {
+fn occluded(o: vec3f, d: vec3f) -> bool {
+  var h: Hit;
+  h.t = INF;
+  if traceBVH(o, d, INF, &h, true) { return true; }
+  if (U.cfg.y & FLAG_WHEAT) != 0u {
+    if traceWheat(o, d, INF, &h) { return true; }
+  }
+  return false;
+}
+
+// ---------------- Sky ----------------
+fn skyCol(d: vec3f, withSun: bool) -> vec3f {
+  let y = d.y;
+  var c: vec3f;
+  if y >= 0.0 {
+    c = mix(U.horizon.rgb, U.zenith.rgb, pow(y, 0.5));
+  } else {
+    c = mix(U.horizon.rgb, U.ground.rgb, clamp(pow(-y, 0.4) * 1.4, 0.0, 1.0));
+  }
+  let mu = dot(d, U.sunDir.xyz);
+  let sunL = U.sunE.rgb;
+  let hz = 1.0 - clamp(abs(y) * 2.2, 0.0, 1.0);
+  c += U.sunTint.rgb * lum(sunL) * (pow(max(mu, 0.0), 5.0) * 0.07 * hz + pow(max(mu, 0.0), 64.0) * 0.12);
+  if withSun && mu > U.sunDir.w {
+    c += sunL / U.sunE.w;
+  }
+  // 밤하늘 별
+  let night = U.sunTint.w;
+  if night > 0.01 && y > 0.02 {
+    let sc = vec2i(floor(vec2f(atan2(d.z, d.x) * 300.0, y * 600.0)));
+    let hs = hf(hash2i(sc, 77u));
+    if hs > 0.9985 { c += vec3f(0.9, 0.95, 1.0) * night * 2.0 * (hs - 0.9985) * 600.0 * y; }
+  }
+  return max(c * U.ground.w, vec3f(0.0));
+}
+
+// ---------------- Surface ----------------
+struct Surf {
+  albedo: vec3f, rough: f32,
+  f0: vec3f, metal: f32,
+  emit: vec3f, trans: f32,
+  glass: f32, ior: f32,
+};
+
+fn defaultSurf(m: Material) -> Surf {
+  var s: Surf;
+  s.albedo = m.albedo; s.rough = m.rough; s.metal = m.metal;
+  s.f0 = mix(vec3f(m.spec), m.albedo, m.metal);
+  s.emit = m.emission; s.trans = 0.0;
+  s.glass = m.transmission; s.ior = m.ior;
+  return s;
+}
+
+fn facade(m: Material, p: vec3f, n: vec3f, s: ptr<function, Surf>) {
+  if abs(n.y) > 0.6 {
+    // 지붕: 타르/자갈
+    let g = 0.7 + 0.3 * vnoise(p.xz * 2.0);
+    (*s).albedo = vec3f(0.16, 0.155, 0.15) * g; (*s).rough = 0.9; (*s).metal = 0.0; (*s).f0 = vec3f(0.04);
+    return;
+  }
+  let floorH = m.p.x; let colW = m.p.y; let wf = m.p.z;
+  let tang = normalize(vec3f(-n.z, 0.0, n.x));
+  let fu = dot(p, tang) / colW;
+  let fv = p.y / floorH;
+  let cu = floor(fu); let cv = floor(fv);
+  let lu = fract(fu); let lv = fract(fv);
+  let storefront = p.y < 4.6 && wf < 0.8;
+  var inWin: bool;
+  if storefront {
+    inWin = abs(fract(dot(p, tang) / 4.0) - 0.5) < 0.42 && p.y > 0.5 && p.y < 3.6;
+  } else {
+    inWin = abs(lu - 0.5) < wf * 0.5 && lv > (1.0 - wf) * 0.55 + 0.06 && lv < 0.93;
+  }
+  let fid = vec2i(i32(cu) + i32(m.p4 * 131.0) + i32(floor(dot(n.xz, vec2f(17.0, 31.0)))), i32(cv));
+  let hw = hash4(fid, 5u);
+  let night = U.sunTint.w;
+  if inWin {
+    let blinds = select(0.0, hw.x * 0.25, hw.y < 0.35);
+    (*s).albedo = mix(vec3f(0.02, 0.025, 0.03), vec3f(0.35, 0.33, 0.3), blinds) * m.color2;
+    (*s).f0 = vec3f(m.p.w) * m.color2 + vec3f(0.02);
+    (*s).rough = 0.02 + hw.z * 0.03;
+    (*s).metal = 0.0;
+    var lit = select(0.0, 1.0, hw.w < 0.42) * night;
+    if storefront { lit = 0.08 + night * 0.9; }
+    (*s).emit = vec3f(1.0, 0.68, 0.36) * (0.5 + hw.x) * lit * 0.85;
+  } else {
+    let band = select(1.0, 0.82, lv < 0.06 || lv > 0.95);
+    let grain = 0.85 + 0.3 * vnoise(vec2f(fu * 3.0, fv * 6.0) + m.p4);
+    (*s).albedo = m.albedo * band * grain;
+    (*s).rough = m.rough;
+    (*s).f0 = mix(vec3f(0.04), m.albedo, m.metal);
+  }
+}
+
+fn road(m: Material, p: vec3f, s: ptr<function, Surf>) {
+  let P = m.p.x; let RW = m.p.y; let CH = m.p.z;
+  let g = fbm(p.xz * 0.9);
+  var col = m.albedo * (0.75 + 0.5 * g);
+  let dzc = p.z - round(p.z / P) * P;  // 교차로 중심까지 z 거리
+  let ax = abs(p.x);
+  var rough = m.rough;
+  // 애비뉴 차선
+  if ax < RW && abs(dzc) > CH + 4.0 {
+    if ax > 0.1 && ax < 0.25 { col = vec3f(0.65, 0.45, 0.06); }
+    if abs(ax - 4.5) < 0.08 && fract(p.z / 9.0) < 0.35 { col = vec3f(0.7); }
+  }
+  // 횡단보도
+  if ax < RW && abs(dzc) > CH + 0.6 && abs(dzc) < CH + 3.8 && fract(p.x / 1.1) < 0.5 { col = vec3f(0.72); }
+  if abs(dzc) < CH - 0.8 && ax > RW + 0.6 && ax < RW + 4.2 && fract(p.z / 1.1) < 0.5 { col = vec3f(0.72); }
+  // 정지선
+  if ax < RW && abs(abs(dzc) - (CH + 4.4)) < 0.2 { col = vec3f(0.7); }
+  // 물웅덩이: 거칠기를 낮춰 반사
+  let pud = fbm(p.xz * 0.12 + 5.0);
+  if pud > 0.66 {
+    let k = smoothstep(0.66, 0.70, pud);
+    col = mix(col, col * 0.45, k);
+    rough = mix(rough, 0.02, k);
+  }
+  (*s).albedo = col; (*s).rough = rough; (*s).f0 = vec3f(0.04); (*s).metal = 0.0;
+}
+
+fn evalSurface(h: Hit, p: vec3f, n: vec3f) -> Surf {
+  var s: Surf;
+  if h.kind >= 2u {
+    s.albedo = h.col; s.rough = 0.7; s.f0 = vec3f(0.035); s.metal = 0.0;
+    s.emit = vec3f(0.0); s.glass = 0.0; s.ior = 1.5;
+    s.trans = select(0.3, 0.45, h.kind == 3u);
+    if h.kind == 4u { s.trans = 0.2; s.rough = 0.95; }
+    return s;
+  }
+  let m = mats[bitcast<u32>(triGeo[h.id * 3u].w)];
+  s = defaultSurf(m);
+  let pat = u32(m.pattern);
+  if pat == 1u { facade(m, p, n, &s); }
+  else if pat == 2u { road(m, p, &s); }
+  else if pat == 3u {
+    let gx = fract(p.x / 1.5); let gz = fract(p.z / 1.5);
+    let line = select(1.0, 0.7, gx < 0.03 || gz < 0.03);
+    s.albedo = m.albedo * line * (0.8 + 0.35 * fbm(p.xz * 1.7));
+  } else if pat == 4u {
+    // 농장 지면: 흙 / 길 / 풀
+    let px = abs(p.x - pathX(p.z));
+    let g = fbm(p.xz * 0.6);
+    var col = mix(m.albedo, vec3f(0.12, 0.10, 0.05), g);
+    let inField = fieldMask(p.xz);
+    if !inField && px > 1.6 { col = mix(vec3f(0.10, 0.16, 0.04), vec3f(0.26, 0.24, 0.08), g); }
+    if px < 1.6 { col = mix(vec3f(0.36, 0.29, 0.20), vec3f(0.28, 0.22, 0.15), g); }
+    s.albedo = col;
+  } else if pat == 5u {
+    let c = (i32(floor(p.x)) + i32(floor(p.z))) & 1;
+    s.albedo = select(m.albedo, m.color2, c == 1);
+  } else if pat == 6u {
+    s.emit = m.emission * (0.12 + 0.88 * U.sunTint.w);
+  } else if pat == 7u {
+    let g = vnoise(p.xz * 0.35 + p.y * 0.5);
+    s.albedo = mix(m.albedo, m.color2, g);
+  }
+  return s;
+}
+
+// ---------------- BRDF ----------------
+fn fresnel(c: f32, f0: vec3f) -> vec3f {
+  let m = clamp(1.0 - c, 0.0, 1.0);
+  let m2 = m * m;
+  return f0 + (vec3f(1.0) - f0) * (m2 * m2 * m);
+}
+fn G1(nv: f32, a: f32) -> f32 {
+  let a2 = a * a;
+  return 2.0 * nv / (nv + sqrt(a2 + (1.0 - a2) * nv * nv));
+}
+fn basis(n: vec3f) -> mat3x3f {
+  // Duff et al. 2017
+  let sg = select(-1.0, 1.0, n.z >= 0.0);
+  let a = -1.0 / (sg + n.z);
+  let b = n.x * n.y * a;
+  return mat3x3f(vec3f(1.0 + sg * n.x * n.x * a, sg * b, -sg * n.x), vec3f(b, sg + n.y * n.y * a, -n.y), n);
+}
+fn cosineDir(n: vec3f, s: ptr<function, u32>) -> vec3f {
   let r = rand2(s);
   let phi = 2.0 * PI * r.x;
-  let cosT = sqrt(1.0 - r.y);
-  let sinT = sqrt(r.y);
-  let local = vec3f(cos(phi) * sinT, sin(phi) * sinT, cosT);
-  return buildBasis(n) * local;
+  let st = sqrt(r.y);
+  return basis(n) * vec3f(cos(phi) * st, sin(phi) * st, sqrt(1.0 - r.y));
 }
-
-fn ggxSample(n: vec3f, rough: f32, s: ptr<function,u32>) -> vec3f {
-  let a = max(rough * rough, 1e-3);
+fn ggxHalf(n: vec3f, a: f32, s: ptr<function, u32>) -> vec3f {
   let r = rand2(s);
   let phi = 2.0 * PI * r.x;
-  let cosT = sqrt((1.0 - r.y) / (1.0 + (a*a - 1.0) * r.y));
-  let sinT = sqrt(max(0.0, 1.0 - cosT*cosT));
-  let local = vec3f(cos(phi) * sinT, sin(phi) * sinT, cosT);
-  return buildBasis(n) * local;
+  let ct = sqrt((1.0 - r.y) / (1.0 + (a * a - 1.0) * r.y));
+  let st = sqrt(max(0.0, 1.0 - ct * ct));
+  return basis(n) * vec3f(cos(phi) * st, sin(phi) * st, ct);
 }
 
-fn fresnelSchlick(cosT: f32, f0: vec3f) -> vec3f {
-  let m = clamp(1.0 - cosT, 0.0, 1.0);
-  return f0 + (vec3f(1.0) - f0) * (m*m*m*m*m);
-}
-
-fn sunDir() -> vec3f {
-  let az = uniforms.sunAzimuth;
-  let el = uniforms.sunElevation;
-  return normalize(vec3f(cos(el) * cos(az), sin(el), cos(el) * sin(az)));
-}
-
-fn sky(dir: vec3f) -> vec3f {
-  let cy = dir.y;
-  var col: vec3f;
-  if cy >= 0.0 {
-    let t = pow(max(cy, 0.0), 0.45);
-    col = mix(uniforms.skyHorizon, uniforms.skyZenith, t);
-    let haze = exp(-cy*cy*120.0) * 0.25;
-    col = col + uniforms.skyHorizon * haze;
-  } else {
-    let t = pow(max(-cy, 0.0), 0.5);
-    col = mix(uniforms.skyHorizon, uniforms.groundColor, clamp(t*1.5, 0.0, 1.0));
+// 태양(NEE) 평가: BRDF * cos
+fn evalLight(sf: Surf, n: vec3f, V: vec3f, L: vec3f) -> vec3f {
+  let nl = dot(n, L);
+  let nv = max(dot(n, V), 1e-4);
+  if nl <= 0.0 {
+    return sf.albedo * sf.trans * (-nl) / PI;
   }
-  let sd = sunDir();
-  let c = dot(dir, sd);
-  let size = max(uniforms.sunSize, 1e-3);
-  let ang = acos(clamp(c, -1.0, 1.0));
-  if ang < size {
-    let limb = 1.0 - 0.6 * (ang / size);
-    col = col + uniforms.sunColor * uniforms.sunIntensity * limb;
-  } else {
-    let glow = exp(-(ang - size) * 30.0) * 0.4;
-    col = col + uniforms.sunColor * uniforms.sunIntensity * glow;
+  let Fv = fresnel(nv, sf.f0);
+  var r = sf.albedo * (1.0 - sf.metal) * (1.0 - sf.trans) * (vec3f(1.0) - Fv) / PI;
+  if sf.rough >= 0.08 {
+    let H = normalize(V + L);
+    let nh = max(dot(n, H), 0.0);
+    let vh = max(dot(V, H), 0.0);
+    let a = sf.rough * sf.rough;
+    let a2 = a * a;
+    let dd = nh * nh * (a2 - 1.0) + 1.0;
+    let D = a2 / (PI * dd * dd);
+    let G = G1(nl, a) * G1(nv, a);
+    // 스펙큘러: D*G*F/(4*nl*nv) * nl
+    return r * nl + D * G * fresnel(vh, sf.f0) / (4.0 * nv);
   }
-  return max(col * uniforms.envIntensity, vec3f(0.0));
+  return r * nl;
 }
 
-fn shadeNormal(h: HitInfo) -> vec3f {
-  let tr = tris[h.tri];
-  let w = 1.0 - h.u - h.v;
-  var n = normalize(tr.n0 * w + tr.n1 * h.u + tr.n2 * h.v);
-  let gn = normalize(cross(tr.v1 - tr.v0, tr.v2 - tr.v0));
-  if dot(n, gn) < 0.0 { n = -n; }
-  return n;
+fn sampleSun(s: ptr<function, u32>) -> vec3f {
+  let r = rand2(s);
+  let ct = 1.0 - r.x * (1.0 - U.sunDir.w);
+  let st = sqrt(max(0.0, 1.0 - ct * ct));
+  let phi = 2.0 * PI * r.y;
+  return normalize(basis(U.sunDir.xyz) * vec3f(cos(phi) * st, sin(phi) * st, ct));
 }
 
-fn pathTrace(startRay: Ray, seed0: u32) -> vec3f {
-  var ray = startRay;
-  var s = seed0;
-  var color = vec3f(0.0);
-  var throughput = vec3f(1.0);
+fn clampLum(c: vec3f, m: f32) -> vec3f {
+  let l = lum(c);
+  return select(c, c * (m / l), l > m);
+}
 
-  for (var bounce = 0u; bounce < uniforms.bounces; bounce = bounce + 1u) {
-    let h = intersect(ray);
-    if h.tri < 0 {
-      color = color + throughput * sky(ray.d);
+struct PathOut { col: vec3f, pos: vec3f, nrm: vec3f, dist: f32, specW: f32, sky: bool };
+
+fn pathTrace(o0: vec3f, d0: vec3f, seed: ptr<function, u32>) -> PathOut {
+  var out: PathOut;
+  var o = o0; var d = d0;
+  var thr = vec3f(1.0);
+  var col = vec3f(0.0);
+  var smoothSpec = true;  // 카메라 / 매끈한 반사 경로면 태양 원반을 직접 더함
+  let bounces = U.cfg.x;
+  out.sky = true; out.dist = 5000.0; out.pos = o0 + d0 * 5000.0; out.nrm = vec3f(0.0); out.specW = 0.0;
+
+  for (var b = 0u; b < bounces; b++) {
+    let h = intersect(o, d);
+    if h.kind == 0u {
+      var c = thr * skyCol(d, smoothSpec);
+      if b > 0u { c = clampLum(c, 40.0); }
+      col += c;
       break;
     }
-    let tr = tris[h.tri];
-    let m = mats[tr.matIdx];
-    let pos = ray.o + ray.d * h.t;
-    let n = shadeNormal(h);
+    let p = o + d * h.t;
+    var ng: vec3f; var ns: vec3f;
+    if h.kind == 1u {
+      let e1 = triGeo[h.id * 3u + 1u].xyz;
+      let e2 = triGeo[h.id * 3u + 2u].xyz;
+      ng = normalize(cross(e1, e2));
+      let nn = triNrm[h.id];
+      let w = 1.0 - h.u - h.v;
+      ns = normalize(octDecode(nn.x) * w + octDecode(nn.y) * h.u + octDecode(nn.z) * h.v);
+    } else { ng = h.n; ns = h.n; }
+    var sf = evalSurface(h, p, ng);
+    let entering = dot(d, ng) < 0.0;
+    if sf.glass < 0.5 {
+      if !entering { ng = -ng; }
+      if dot(ns, ng) < 0.0 { ns = -ns; }
+    }
+    if b == 0u {
+      out.sky = false; out.dist = h.t; out.pos = p; out.nrm = ng;
+      out.specW = select(0.0, 1.0 - sf.rough * 5.0, sf.rough < 0.2) * max(sf.f0.x, sf.metal) * 2.0;
+    }
+    var e = thr * sf.emit;
+    if b > 0u { e = clampLum(e, 30.0); }
+    col += e;
+    let V = -d;
 
-    color = color + throughput * m.emission;
-
-    let V = -ray.d;
-
-    if m.transmission > 0.5 {
-      var nl = n;
-      var eta: f32;
-      let entering = dot(ray.d, n) < 0.0;
-      if entering { nl = n; eta = 1.0 / m.ior; }
-      else { nl = -n; eta = m.ior; }
-      let cosI = -dot(ray.d, nl);
-      let f0v = (m.ior - 1.0) / (m.ior + 1.0);
-      let f0 = vec3f(f0v * f0v);
-      let fres = fresnelSchlick(cosI, f0).x;
-      let refr = refract(ray.d, nl, eta);
-      if rand(&s) < fres || dot(refr, refr) < 1e-6 {
-        let rdir = reflect(ray.d, nl);
-        ray = Ray(pos + nl * EPS, rdir, EPS, 1e30);
+    // ---- 유리 (굴절/반사) ----
+    if sf.glass > 0.5 {
+      var nl = ng; var eta = 1.0 / sf.ior;
+      if !entering { nl = -ng; eta = sf.ior; }
+      let cosI = -dot(d, nl);
+      let f0v = (sf.ior - 1.0) / (sf.ior + 1.0);
+      let fr = fresnel(cosI, vec3f(f0v * f0v)).x;
+      let refr = refract(d, nl, eta);
+      if rand(seed) < fr || dot(refr, refr) < 1e-6 {
+        d = reflect(d, nl); o = p + nl * EPS;
       } else {
-        throughput = throughput * m.baseColor;
-        ray = Ray(pos - nl * EPS, normalize(refr), EPS, 1e30);
+        thr *= sf.albedo; d = normalize(refr); o = p - nl * EPS;
       }
-    } else if m.metalness > 0.5 {
-      let hN = ggxSample(n, m.roughness, &s);
-      var rdir = reflect(ray.d, hN);
-      if dot(rdir, n) < 0.0 { rdir = reflect(ray.d, n); }
-      let f = fresnelSchlick(max(dot(V, hN), 0.0), m.baseColor);
-      throughput = throughput * f;
-      ray = Ray(pos + n * EPS, normalize(rdir), EPS, 1e30);
+      smoothSpec = true;
+      continue;
+    }
+
+    // ---- 태양 NEE (그림자 레이 1개) ----
+    let L = sampleSun(seed);
+    let nlS = dot(ns, L);
+    if (nlS > 0.0 || sf.trans > 0.0) && lum(U.sunE.rgb) > 1e-4 {
+      let fl = evalLight(sf, ns, V, L);
+      if lum(fl) > 1e-6 {
+        let so = p + ng * select(-EPS, EPS, dot(ng, L) > 0.0);
+        if !occluded(so, L) {
+          var c = thr * U.sunE.rgb * fl;
+          if b > 0u { c = clampLum(c, 30.0); }
+          col += c;
+        }
+      }
+    }
+
+    // ---- 다음 방향 샘플 ----
+    let nv = max(dot(ns, V), 1e-4);
+    let Fv = fresnel(nv, sf.f0);
+    let specW = lum(Fv);
+    let diffW = lum(sf.albedo) * (1.0 - sf.metal) * (1.0 - specW);
+    var pSpec = clamp(specW / max(specW + diffW, 1e-5), 0.08, 0.95);
+    if sf.metal > 0.5 { pSpec = 1.0; }
+    if rand(seed) < pSpec {
+      let a = max(sf.rough * sf.rough, 1e-3);
+      let H = ggxHalf(ns, a, seed);
+      let Ld = reflect(d, H);
+      let nl = dot(ns, Ld);
+      if nl <= 0.0 || dot(ng, Ld) <= 0.0 { break; }
+      let vh = max(dot(V, H), 1e-4);
+      let nh = max(dot(ns, H), 1e-4);
+      thr *= fresnel(vh, sf.f0) * G1(nl, a) * G1(nv, a) * vh / (nv * nh) / pSpec;
+      d = Ld; o = p + ng * EPS;
+      smoothSpec = sf.rough < 0.08;
     } else {
-      let f0 = mix(vec3f(0.04), m.baseColor, m.metalness);
-      let specProb = clamp(max(f0.x, max(f0.y, f0.z)) + m.metalness, 0.05, 0.9);
-      if rand(&s) < specProb {
-        let hN = ggxSample(n, m.roughness, &s);
-        var rdir = reflect(ray.d, hN);
-        if dot(rdir, n) < 0.0 { rdir = reflect(ray.d, n); }
-        let f = fresnelSchlick(max(dot(V, hN), 0.0), f0);
-        throughput = throughput * f / specProb;
-        ray = Ray(pos + n * EPS, normalize(rdir), EPS, 1e30);
+      let wt = sf.albedo * (1.0 - sf.metal) / (1.0 - pSpec);
+      if sf.trans > 0.0 && rand(seed) < sf.trans {
+        d = cosineDir(-ns, seed); o = p - ng * EPS;
       } else {
-        let ndir = cosineSample(n, &s);
-        throughput = throughput * m.baseColor / (1.0 - specProb);
-        ray = Ray(pos + n * EPS, ndir, EPS, 1e30);
+        d = cosineDir(ns, seed); o = p + ng * EPS;
+      }
+      thr *= wt;
+      smoothSpec = false;
+    }
+    if b >= 2u {
+      let q = clamp(max(thr.x, max(thr.y, thr.z)), 0.05, 1.0);
+      if rand(seed) > q { break; }
+      thr /= q;
+    }
+  }
+
+  // ---- 대기 (안개 + 빛줄기) : 1차 레이 구간 ----
+  let sigma = U.zenith.w;
+  if sigma > 0.0 {
+    let dd = select(out.dist, 600.0, out.sky);
+    let T = select(exp(-sigma * out.dist), 1.0, out.sky);
+    let amb = skyCol(normalize(vec3f(d0.x, 0.1, d0.z)), false) * 0.85;
+    col = col * T + amb * (1.0 - T);
+    let gs = U.horizon.w;
+    if gs > 0.0 && lum(U.sunE.rgb) > 1e-4 {
+      let seg = min(dd, 600.0);
+      let ts = rand(seed) * seg;
+      let ps = o0 + d0 * ts;
+      let mu = dot(d0, U.sunDir.xyz);
+      let g = 0.65;
+      let ph = (1.0 - g * g) / (4.0 * PI * pow(1.0 + g * g - 2.0 * g * mu, 1.5));
+      if !occluded(ps, sampleSun(seed)) {
+        col += U.sunE.rgb * sigma * exp(-sigma * ts) * seg * ph * gs;
       }
     }
-
-    if bounce > 2u {
-      let p = max(throughput.x, max(throughput.y, throughput.z));
-      if rand(&s) > p { break; }
-      throughput = throughput / max(p, 1e-4);
-    }
-    throughput = clamp(throughput, vec3f(0.0), vec3f(20.0));
   }
-  if !(color.x == color.x) || !(color.y == color.y) || !(color.z == color.z) {
-    color = vec3f(0.0);
-  }
-  return clamp(color, vec3f(0.0), vec3f(64.0));
+  if !(col.x == col.x && col.y == col.y && col.z == col.z) { col = vec3f(0.0); }
+  out.col = min(col, vec3f(200.0));
+  return out;
 }
+
+const SKYCODE = 0xFFFFFFFFu;
 
 @compute @workgroup_size(8, 8)
 fn main(@builtin(global_invocation_id) gid: vec3u) {
-  if gid.x >= uniforms.width || gid.y >= uniforms.height { return; }
+  let W = U.dims.x; let H = U.dims.y;
+  if gid.x >= W || gid.y >= H { return; }
   let px = gid.xy;
-  let pixIdx = px.x + px.y * uniforms.width;
-  let frame = u32(uniforms.frame);
-  var seed = px.x + px.y * uniforms.width + frame * uniforms.width * uniforms.height + 1u;
+  let pix = px.x + px.y * W;
+  var seed = pcg(px.x * 1973u + px.y * 9277u + u32(U.camPos.w) * 26699u) | 1u;
 
-  let ray = generateRay(px, &seed);
-  let c = pathTrace(ray, seed);
+  let jitter = rand2(&seed) - 0.5;
+  let uv = (vec2f(px) + 0.5 + jitter) / vec2f(f32(W), f32(H));
+  let ndc = uv * 2.0 - 1.0;
+  var vd = U.invProj * vec4f(ndc.x, -ndc.y, -1.0, 1.0);
+  vd = vec4f(vd.xyz / vd.w, 0.0);
+  let dir = normalize((U.invView * vd).xyz);
+  let ro = U.camPos.xyz;
 
-  let prev = accum[pixIdx];
-  let nv = prev + vec4f(c, 1.0);
-  accum[pixIdx] = nv;
-  let outc = nv.rgb / max(nv.w, 1.0);
-  textureStore(outTex, vec2i(px), vec4f(outc, 1.0));
+  let r = pathTrace(ro, dir, &seed);
+  let packedN = select(octEncode(r.nrm), SKYCODE, r.sky);
+
+  // ---- 시간적 누적 (재투영) ----
+  var hc = vec3f(0.0);
+  var hn = 0.0;
+  let flags = U.cfg.y;
+  let PW = U.dims.z; let PH = U.dims.w;
+  if (flags & FLAG_RESET) == 0u {
+    if (flags & FLAG_STATIC) != 0u {
+      let h0 = histIn[pix * 2u];
+      hc = h0.rgb; hn = h0.w;
+    } else {
+      let clip = U.prevViewProj * vec4f(r.pos, 1.0);
+      if clip.w > 1e-4 {
+        let pn = clip.xy / clip.w;
+        let pp = vec2f((pn.x * 0.5 + 0.5) * f32(PW), (0.5 - pn.y * 0.5) * f32(PH)) - 0.5;
+        let base = vec2i(floor(pp));
+        let f = pp - vec2f(base);
+        var wsum = 0.0;
+        var csum = vec3f(0.0);
+        var nsum = 0.0;
+        let tol = 0.025 * r.dist + 0.03;
+        for (var k = 0; k < 4; k++) {
+          let q = base + vec2i(k & 1, k >> 1);
+          if q.x < 0 || q.y < 0 || q.x >= i32(PW) || q.y >= i32(PH) { continue; }
+          let bw = select(1.0 - f.x, f.x, (k & 1) == 1) * select(1.0 - f.y, f.y, (k >> 1) == 1);
+          if bw <= 1e-4 { continue; }
+          let qi = u32(q.x) + u32(q.y) * PW;
+          let gp = histIn[qi * 2u + 1u];
+          let gcode = bitcast<u32>(gp.w);
+          var ok = false;
+          if r.sky { ok = gcode == SKYCODE; }
+          else if gcode != SKYCODE {
+            ok = distance(gp.xyz, r.pos) < tol && dot(octDecode(gcode), r.nrm) > 0.8;
+          }
+          if ok {
+            let hv = histIn[qi * 2u];
+            wsum += bw; csum += hv.rgb * bw; nsum += hv.w * bw;
+          }
+        }
+        if wsum > 0.05 { hc = csum / wsum; hn = nsum / wsum; }
+      }
+    }
+  }
+  var cap = U.hist.x;
+  if (flags & FLAG_STATIC) == 0u { cap = mix(U.hist.y, 3.0, clamp(r.specW, 0.0, 1.0)); }
+  let n = min(hn, cap) + 1.0;
+  let c = mix(hc, r.col, 1.0 / n);
+  histOut[pix * 2u] = vec4f(c, n);
+  histOut[pix * 2u + 1u] = vec4f(r.pos, bitcast<f32>(packedN));
+  textureStore(colorTex, vec2i(px), vec4f(c, min(n, 2048.0)));
+  textureStore(depthTex, vec2i(px), vec4f(r.dist, 0.0, 0.0, 0.0));
 }
 `;
 
 // ---------------------------------------------------------------------------
-// WGSL: display (tone-map)
+// WGSL: display (joint-bilateral 업샘플 + 디노이즈 + 톤매핑)
 // ---------------------------------------------------------------------------
-function buildDisplayWGSL(exposure) {
-  return /* wgsl */`
-@group(0) @binding(0) var srcTex: texture_2d<f32>;
-@group(0) @binding(1) var srcSamp: sampler;
-struct VSOut { @builtin(position) pos: vec4f, @location(0) uv: vec2f };
+const displayWGSL = /* wgsl */`
+struct DU { src: vec4f, dst: vec4f, misc: vec4f };
+@group(0) @binding(0) var colTex: texture_2d<f32>;
+@group(0) @binding(1) var depTex: texture_2d<f32>;
+@group(0) @binding(2) var<uniform> du: DU;
 
+struct VSOut { @builtin(position) pos: vec4f };
 @vertex
 fn vs(@builtin(vertex_index) vi: u32) -> VSOut {
-  var p = array<vec2f,3>(vec2f(-1.0,-1.0), vec2f(3.0,-1.0), vec2f(-1.0,3.0));
+  var p = array<vec2f, 3>(vec2f(-1.0, -1.0), vec2f(3.0, -1.0), vec2f(-1.0, 3.0));
   var o: VSOut;
-  let xy = p[vi];
-  o.pos = vec4f(xy, 0.0, 1.0);
-  o.uv = vec2f((xy.x + 1.0) * 0.5, 1.0 - (xy.y + 1.0) * 0.5);
+  o.pos = vec4f(p[vi], 0.0, 1.0);
   return o;
 }
 
 fn aces(x: vec3f) -> vec3f {
   let a = 2.51; let b = 0.03; let c = 2.43; let d = 0.59; let e = 0.14;
-  return clamp((x*(a*x+b))/(x*(c*x+d)+e), vec3f(0.0), vec3f(1.0));
+  return clamp((x * (a * x + b)) / (x * (c * x + d) + e), vec3f(0.0), vec3f(1.0));
 }
 
 @fragment
 fn fs(in: VSOut) -> @location(0) vec4f {
-  let hdr = textureSampleLevel(srcTex, srcSamp, in.uv, 0.0).rgb * ${exposure.toFixed(4)};
-  let mapped = aces(hdr);
-  let srgb = pow(mapped, vec3f(1.0/2.2));
+  let uv = in.pos.xy / du.dst.xy;
+  let size = vec2i(du.src.xy);
+  let s = uv * du.src.xy - 0.5;
+  let base = vec2i(floor(s));
+  let ci = clamp(vec2i(round(s)), vec2i(0), size - 1);
+  let cd = textureLoad(depTex, ci, 0).r;
+  let cN = textureLoad(colTex, ci, 0).a;
+  let rad = 1.0 + du.misc.x * clamp(3.0 / max(cN, 1.0) - 0.15, 0.0, 1.0);
+  var sum = vec3f(0.0);
+  var wsum = 0.0;
+  for (var j = -1; j <= 2; j++) {
+    for (var i = -1; i <= 2; i++) {
+      let q = base + vec2i(i, j);
+      let qc = clamp(q, vec2i(0), size - 1);
+      let dist = length(vec2f(q) - s);
+      let ws = max(0.0, 1.0 - dist / rad);
+      if ws <= 0.0 { continue; }
+      let d = textureLoad(depTex, qc, 0).r;
+      let wd = exp(-abs(d - cd) / (0.015 * cd + 0.03));
+      let c = textureLoad(colTex, qc, 0).rgb;
+      let w = ws * wd;
+      sum += c * w; wsum += w;
+    }
+  }
+  var hdr = select(textureLoad(colTex, ci, 0).rgb, sum / wsum, wsum > 1e-5);
+  hdr *= du.dst.z;
+  var m = aces(hdr);
+  // 비네팅
+  let vq = uv - 0.5;
+  m *= 1.0 - du.dst.w * dot(vq, vq) * 1.6;
+  var srgb = pow(max(m, vec3f(0.0)), vec3f(1.0 / 2.2));
+  // 디더링 (하늘 밴딩 방지)
+  let n = fract(sin(dot(in.pos.xy, vec2f(12.9898, 78.233))) * 43758.5453);
+  srgb += (n - 0.5) / 255.0;
   return vec4f(srgb, 1.0);
 }
 `;
-}
 
 // ---------------------------------------------------------------------------
-// Pipelines
+// Pipelines (명시적 바인드 그룹 레이아웃)
 // ---------------------------------------------------------------------------
-const computeModule = device.createShaderModule({ code: computeWGSL });
-const computePipeline = device.createComputePipeline({
-  layout: 'auto',
-  compute: { module: computeModule, entryPoint: 'main' },
+const computeBGL = device.createBindGroupLayout({
+  entries: [
+    { binding: 0, visibility: GPUShaderStage.COMPUTE, buffer: { type: 'uniform' } },
+    { binding: 1, visibility: GPUShaderStage.COMPUTE, buffer: { type: 'read-only-storage' } },
+    { binding: 2, visibility: GPUShaderStage.COMPUTE, buffer: { type: 'read-only-storage' } },
+    { binding: 3, visibility: GPUShaderStage.COMPUTE, buffer: { type: 'read-only-storage' } },
+    { binding: 4, visibility: GPUShaderStage.COMPUTE, buffer: { type: 'read-only-storage' } },
+    { binding: 5, visibility: GPUShaderStage.COMPUTE, buffer: { type: 'read-only-storage' } },
+    { binding: 6, visibility: GPUShaderStage.COMPUTE, buffer: { type: 'storage' } },
+    { binding: 7, visibility: GPUShaderStage.COMPUTE, storageTexture: { access: 'write-only', format: 'rgba16float' } },
+    { binding: 8, visibility: GPUShaderStage.COMPUTE, storageTexture: { access: 'write-only', format: 'r32float' } },
+  ],
+});
+const displayBGL = device.createBindGroupLayout({
+  entries: [
+    { binding: 0, visibility: GPUShaderStage.FRAGMENT, texture: { sampleType: 'unfilterable-float' } },
+    { binding: 1, visibility: GPUShaderStage.FRAGMENT, texture: { sampleType: 'unfilterable-float' } },
+    { binding: 2, visibility: GPUShaderStage.FRAGMENT, buffer: { type: 'uniform' } },
+  ],
 });
 
-let displayPipeline, displayBindGroupLayout;
-function buildDisplayPipeline(exposure) {
-  const mod = device.createShaderModule({ code: buildDisplayWGSL(exposure) });
-  displayPipeline = device.createRenderPipeline({
-    layout: 'auto',
-    vertex: { module: mod, entryPoint: 'vs' },
-    fragment: { module: mod, entryPoint: 'fs', targets: [{ format }] },
-    primitive: { topology: 'triangle-list' },
+const computeModule = device.createShaderModule({ code: computeWGSL });
+const displayModule = device.createShaderModule({ code: displayWGSL });
+for (const [name, mod] of [['compute', computeModule], ['display', displayModule]]) {
+  mod.getCompilationInfo().then((info) => {
+    for (const m of info.messages) if (m.type === 'error') console.error(`[${name} WGSL] ${m.lineNum}:${m.linePos} ${m.message}`);
   });
-  displayBindGroupLayout = displayPipeline.getBindGroupLayout(0);
 }
-buildDisplayPipeline(1.0);
+const computePipeline = device.createComputePipeline({
+  layout: device.createPipelineLayout({ bindGroupLayouts: [computeBGL] }),
+  compute: { module: computeModule, entryPoint: 'main' },
+});
+const displayPipeline = device.createRenderPipeline({
+  layout: device.createPipelineLayout({ bindGroupLayouts: [displayBGL] }),
+  vertex: { module: displayModule, entryPoint: 'vs' },
+  fragment: { module: displayModule, entryPoint: 'fs', targets: [{ format }] },
+  primitive: { topology: 'triangle-list' },
+});
 
-const uniformBuffer = device.createBuffer({ size: 256, usage: GPUBufferUsage.UNIFORM | GPUBufferUsage.COPY_DST });
-const uF = new Float32Array(64);
+const uniformBuffer = device.createBuffer({ size: 352, usage: GPUBufferUsage.UNIFORM | GPUBufferUsage.COPY_DST });
+const uF = new Float32Array(88);
 const uU = new Uint32Array(uF.buffer);
-
-// ---------------------------------------------------------------------------
-// Resolution-dependent resources
-// ---------------------------------------------------------------------------
-let ptWidth = 1, ptHeight = 1;
-let accumBuffer, outputTexture, computeBindGroup, displayBindGroup;
-let frameCount = 0;
-const sampler = device.createSampler({ magFilter: 'linear', minFilter: 'linear' });
-
-function createPtResources(w, h) {
-  ptWidth = Math.max(1, w | 0);
-  ptHeight = Math.max(1, h | 0);
-  if (accumBuffer) accumBuffer.destroy();
-  if (outputTexture) outputTexture.destroy();
-  accumBuffer = device.createBuffer({
-    size: ptWidth * ptHeight * 16,
-    usage: GPUBufferUsage.STORAGE | GPUBufferUsage.COPY_DST,
-  });
-  outputTexture = device.createTexture({
-    size: [ptWidth, ptHeight],
-    format: 'rgba16float',
-    usage: GPUTextureUsage.STORAGE_BINDING | GPUTextureUsage.TEXTURE_BINDING,
-  });
-  rebuildComputeBindGroup();
-  rebuildDisplayBindGroup();
-  resetAccum();
-}
-
-function rebuildComputeBindGroup() {
-  if (!accumBuffer || !outputTexture || !bvhBuffer) return;
-  computeBindGroup = device.createBindGroup({
-    layout: computePipeline.getBindGroupLayout(0),
-    entries: [
-      { binding: 0, resource: { buffer: uniformBuffer } },
-      { binding: 1, resource: { buffer: bvhBuffer } },
-      { binding: 2, resource: { buffer: triBuffer } },
-      { binding: 3, resource: { buffer: matBuffer } },
-      { binding: 4, resource: { buffer: accumBuffer } },
-      { binding: 5, resource: outputTexture.createView() },
-    ],
-  });
-}
-
-function rebuildDisplayBindGroup() {
-  if (!outputTexture) return;
-  displayBindGroup = device.createBindGroup({
-    layout: displayBindGroupLayout,
-    entries: [
-      { binding: 0, resource: outputTexture.createView() },
-      { binding: 1, resource: sampler },
-    ],
-  });
-}
-
-function resetAccum() {
-  frameCount = 0;
-  if (accumBuffer) {
-    device.queue.writeBuffer(accumBuffer, 0, new Float32Array(ptWidth * ptHeight * 4));
-  }
-}
+const dispUniform = device.createBuffer({ size: 48, usage: GPUBufferUsage.UNIFORM | GPUBufferUsage.COPY_DST });
+const dF = new Float32Array(12);
 
 // ---------------------------------------------------------------------------
 // Params + GUI
 // ---------------------------------------------------------------------------
 const params = {
-  bounces: 6,
-  maxSamples: 1024,
-  targetRes: 1.0,
-  exposure: 1.0,
+  scene: 'city',
+  bounces: 3,
+  autoRes: true,
+  targetFps: 45,
+  maxRes: 1.0,
+  resScale: 0.6,
+  denoise: 1.0,
+  exposure: 1.15,
+  sunAzimuth: 3.3,
+  sunElevation: 0.16,
+  sunIntensity: 4.0,
   envIntensity: 1.0,
-  sunAzimuth: 0.7,
-  sunElevation: 0.85,
-  sunSize: 0.04,
-  sunIntensity: 18.0,
-  skyZenith: '#3a6dd0',
-  skyHorizon: '#bcd2ee',
-  groundColor: '#2a2c33',
-  sunColor: '#fff2d6',
-  preset: 'Balanced',
+  fog: 0.0028,
+  godrays: 1.0,
+  walkSpeed: 4.5,
+  fov: 70,
 };
-
-function hexToRgb(h) {
-  const c = new THREE.Color(h);
-  return [c.r, c.g, c.b];
-}
+const SCENES = { city: buildCityScene, wheat: buildWheatScene, showcase: buildShowcaseScene };
+const SCENE_LABELS = { '맨해튼풍 애비뉴': 'city', '황금 밀밭': 'wheat', '재질 쇼케이스': 'showcase' };
 
 const gui = new GUI({ title: 'Path Tracer' });
-gui.add(params, 'preset', ['Fast', 'Balanced', 'Quality']).onChange(applyPreset);
-function applyPreset(p) {
-  if (p === 'Fast') { params.bounces = 3; params.targetRes = 0.75; }
-  else if (p === 'Balanced') { params.bounces = 6; params.targetRes = 1.0; }
-  else if (p === 'Quality') { params.bounces = 10; params.targetRes = 1.0; }
-  gui.controllersRecursive().forEach((c) => c.updateDisplay());
-  resize();
+gui.add(params, 'scene', SCENE_LABELS).name('장면').onChange((v) => loadScene(v));
+const fRender = gui.addFolder('렌더');
+fRender.add(params, 'bounces', 1, 8, 1).name('바운스').onChange(resetAccum);
+fRender.add(params, 'autoRes').name('자동 해상도');
+fRender.add(params, 'targetFps', 30, 120, 1).name('목표 FPS');
+fRender.add(params, 'resScale', 0.25, 1.0, 0.01).name('해상도 (수동)').listen();
+fRender.add(params, 'maxRes', 0.5, 2.0, 0.05).name('최대 해상도').onChange(() => resize(true));
+fRender.add(params, 'denoise', 0, 1, 0.05).name('디노이즈');
+fRender.add(params, 'exposure', 0.2, 4).name('노출');
+const fSky = gui.addFolder('태양 / 대기');
+fSky.add(params, 'sunElevation', -0.3, 1.5, 0.005).name('태양 고도 (시간)').onChange(resetAccum).listen();
+fSky.add(params, 'sunAzimuth', 0, Math.PI * 2, 0.005).name('태양 방위').onChange(resetAccum).listen();
+fSky.add(params, 'sunIntensity', 0, 12).name('태양 세기').onChange(resetAccum).listen();
+fSky.add(params, 'envIntensity', 0, 3).name('하늘 밝기').onChange(resetAccum);
+fSky.add(params, 'fog', 0, 0.01, 0.0001).name('안개').onChange(resetAccum).listen();
+fSky.add(params, 'godrays', 0, 3).name('빛줄기').onChange(resetAccum).listen();
+const fPlayer = gui.addFolder('플레이어');
+fPlayer.add(params, 'walkSpeed', 1, 20).name('걷기 속도');
+fPlayer.add(params, 'fov', 40, 110, 1).name('시야각').onChange(() => { camera.fov = params.fov; camera.updateProjectionMatrix(); resetAccum(); });
+const fObj = gui.addFolder('오브젝트');
+fObj.add({ f: () => addPrimitive('sphere') }, 'f').name('구 추가 (앞)');
+fObj.add({ f: () => addPrimitive('box') }, 'f').name('상자 추가 (앞)');
+fObj.add({ f: () => loadFile() }, 'f').name('OBJ/GLTF 불러오기');
+fObj.close(); fPlayer.close();
+
+// ---------------------------------------------------------------------------
+// Player (1인칭, 플레이어 모델 없음 → 화면/반사에 보이지 않음)
+// ---------------------------------------------------------------------------
+const camera = new THREE.PerspectiveCamera(params.fov, 1, 0.05, 5000);
+camera.rotation.order = 'YXZ';
+const player = { pos: new THREE.Vector3(), vel: new THREE.Vector3(), yaw: 0, pitch: 0, fly: false, eyeY: 1.7 };
+const keys = new Set();
+let colliders = [];
+
+window.addEventListener('keydown', (e) => {
+  if (e.target && e.target.tagName === 'INPUT') return;
+  keys.add(e.code);
+  if (e.code === 'KeyF') { player.fly = !player.fly; player.vel.set(0, 0, 0); }
+  if (e.code === 'Digit1') setScene('city');
+  if (e.code === 'Digit2') setScene('wheat');
+  if (e.code === 'Digit3') setScene('showcase');
+  if (document.pointerLockElement === canvas && ['Space', 'KeyW', 'KeyA', 'KeyS', 'KeyD'].includes(e.code)) e.preventDefault();
+});
+window.addEventListener('keyup', (e) => keys.delete(e.code));
+window.addEventListener('blur', () => keys.clear());
+canvas.addEventListener('click', () => { if (document.pointerLockElement !== canvas) canvas.requestPointerLock(); });
+document.addEventListener('pointerlockchange', () => {
+  const locked = document.pointerLockElement === canvas;
+  helpEl.style.opacity = locked ? '0' : '1';
+  crossEl.style.display = locked ? 'block' : 'none';
+});
+document.addEventListener('mousemove', (e) => {
+  if (document.pointerLockElement !== canvas) return;
+  const sens = 0.0022 * (params.fov / 70);
+  player.yaw -= e.movementX * sens;
+  player.pitch = Math.max(-1.55, Math.min(1.55, player.pitch - e.movementY * sens));
+});
+// 마우스 잠금 없이도 드래그로 둘러보기
+let dragging = false;
+canvas.addEventListener('mousedown', () => { dragging = true; });
+window.addEventListener('mouseup', () => { dragging = false; });
+canvas.addEventListener('mousemove', (e) => {
+  if (!dragging || document.pointerLockElement === canvas) return;
+  player.yaw -= e.movementX * 0.004;
+  player.pitch = Math.max(-1.55, Math.min(1.55, player.pitch - e.movementY * 0.004));
+});
+
+function setScene(name) {
+  params.scene = name;
+  gui.controllers[0].updateDisplay();
+  loadScene(name);
+}
+
+const PR = 0.3; // 플레이어 반경
+function updatePlayer(dt) {
+  const fwd = new THREE.Vector3(-Math.sin(player.yaw), 0, -Math.cos(player.yaw));
+  const right = new THREE.Vector3(Math.cos(player.yaw), 0, -Math.sin(player.yaw));
+  const wish = new THREE.Vector3();
+  if (keys.has('KeyW')) wish.add(fwd);
+  if (keys.has('KeyS')) wish.sub(fwd);
+  if (keys.has('KeyD')) wish.add(right);
+  if (keys.has('KeyA')) wish.sub(right);
+  if (player.fly) {
+    if (keys.has('Space')) wish.y += 1;
+    if (keys.has('KeyC') || keys.has('ControlLeft')) wish.y -= 1;
+    if (keys.has('KeyW') || keys.has('KeyS')) {
+      // 비행 모드에서는 바라보는 방향(피치 포함)으로 이동
+      const s = (keys.has('KeyW') ? 1 : 0) - (keys.has('KeyS') ? 1 : 0);
+      wish.y += Math.sin(player.pitch) * s;
+    }
+  }
+  if (wish.lengthSq() > 0) wish.normalize();
+  const run = keys.has('ShiftLeft') || keys.has('ShiftRight');
+  const speed = params.walkSpeed * (run ? 2.6 : 1) * (player.fly ? 4 : 1);
+  player.vel.lerp(wish.multiplyScalar(speed), 1 - Math.exp(-dt * 12));
+  if (player.vel.lengthSq() < 1e-6) player.vel.set(0, 0, 0);
+  const p = player.pos;
+  p.addScaledVector(player.vel, dt);
+
+  // 바닥 높이 (낮은 박스 = 계단처럼 올라섬)
+  let floorY = 0;
+  const feet = p.y - player.eyeY;
+  for (const c of colliders) {
+    if (p.x < c.min[0] || p.x > c.max[0] || p.z < c.min[2] || p.z > c.max[2]) continue;
+    if (c.max[1] - feet <= 0.45 && c.max[1] > floorY) floorY = c.max[1];
+  }
+  if (!player.fly) {
+    const target = floorY + player.eyeY;
+    p.y += (target - p.y) * (1 - Math.exp(-dt * 18));
+  } else if (p.y < floorY + 0.5) p.y = floorY + 0.5;
+
+  // 수평 충돌 (원 vs AABB)
+  const fy = p.y - (player.fly ? 0.5 : player.eyeY), hy = p.y + 0.1;
+  for (let iter = 0; iter < 2; iter++) {
+    for (const c of colliders) {
+      if (c.max[1] <= fy + 0.45 || c.min[1] >= hy) continue;
+      const qx = Math.max(c.min[0], Math.min(p.x, c.max[0]));
+      const qz = Math.max(c.min[2], Math.min(p.z, c.max[2]));
+      const dx = p.x - qx, dz = p.z - qz;
+      const d2 = dx * dx + dz * dz;
+      if (d2 >= PR * PR) continue;
+      if (d2 > 1e-8) {
+        const d = Math.sqrt(d2), push = PR - d;
+        p.x += (dx / d) * push; p.z += (dz / d) * push;
+      } else {
+        // 박스 내부: 가장 가까운 면으로 밀어냄
+        const ex = [p.x - c.min[0], c.max[0] - p.x, p.z - c.min[2], c.max[2] - p.z];
+        const k = ex.indexOf(Math.min(...ex));
+        if (k === 0) p.x = c.min[0] - PR; else if (k === 1) p.x = c.max[0] + PR;
+        else if (k === 2) p.z = c.min[2] - PR; else p.z = c.max[2] + PR;
+      }
+    }
+  }
+  camera.position.copy(p);
+  camera.rotation.set(player.pitch, player.yaw, 0, 'YXZ');
+  camera.updateMatrixWorld(true);
+}
+
+// ---------------------------------------------------------------------------
+// Scene upload
+// ---------------------------------------------------------------------------
+let current = null;     // { sb, spawn, env }
+let bvhBuffer, geoBuffer, nrmBuffer, matBuffer;
+let triCount = 0;
+
+function uploadScene(sb) {
+  const t0 = performance.now();
+  if (sb.triCount < 2) { sb.tri([0, -100, 0], [0.01, -100, 0], [0, -100, 0.01], null, null, null, sb.material({})); sb.tri([0, -100, 0], [0.01, -100, 0], [0, -100, 0.01], null, null, null, 0); }
+  const bvh = buildBVH(sb);
+  const matBuf = packMaterials(sb.mats);
+  for (const b of [bvhBuffer, geoBuffer, nrmBuffer, matBuffer]) if (b) b.destroy();
+  const mk = (data) => {
+    const b = device.createBuffer({ size: Math.max(16, data.byteLength), usage: GPUBufferUsage.STORAGE | GPUBufferUsage.COPY_DST });
+    device.queue.writeBuffer(b, 0, data);
+    return b;
+  };
+  bvhBuffer = mk(bvh.nodeBuf); geoBuffer = mk(bvh.geo); nrmBuffer = mk(bvh.nrm); matBuffer = mk(matBuf);
+  triCount = sb.triCount;
+  colliders = sb.colliders;
+  hTris.textContent = triCount.toLocaleString();
+  console.log(`scene: ${triCount} tris, ${bvh.nodeCount} nodes, BVH ${(performance.now() - t0).toFixed(0)} ms`);
+  rebuildBindGroups();
   resetAccum();
 }
 
-const fSky = gui.addFolder('Sun & Sky');
-fSky.add(params, 'sunAzimuth', 0, 6.283).onChange(resetAccum);
-fSky.add(params, 'sunElevation', -0.2, 1.55).onChange(resetAccum);
-fSky.add(params, 'sunSize', 0.005, 0.3).name('softness').onChange(resetAccum);
-fSky.add(params, 'sunIntensity', 0, 60).onChange(resetAccum);
-fSky.add(params, 'envIntensity', 0, 3).onChange(resetAccum);
-fSky.addColor(params, 'skyZenith').onChange(resetAccum);
-fSky.addColor(params, 'skyHorizon').onChange(resetAccum);
-fSky.addColor(params, 'groundColor').onChange(resetAccum);
-fSky.addColor(params, 'sunColor').onChange(resetAccum);
+function loadScene(name) {
+  hStatus.textContent = 'building scene';
+  current = SCENES[name]();
+  const e = current.env;
+  Object.assign(params, { sunAzimuth: e.sunAzimuth, sunElevation: e.sunElevation, sunIntensity: e.sunIntensity, fog: e.fog, godrays: e.godrays, exposure: e.exposure });
+  gui.controllersRecursive().forEach((c) => c.updateDisplay());
+  player.pos.fromArray(current.spawn.pos);
+  player.yaw = current.spawn.yaw; player.pitch = current.spawn.pitch;
+  player.vel.set(0, 0, 0); player.fly = false;
+  uploadScene(current.sb);
+}
 
-const fRender = gui.addFolder('Render');
-fRender.add(params, 'bounces', 1, 16, 1).onChange(resetAccum);
-fRender.add(params, 'maxSamples', 16, 4096, 1);
-fRender.add(params, 'targetRes', 0.25, 1.0, 0.05).onChange(() => { resize(); resetAccum(); });
-fRender.add(params, 'exposure', 0.1, 4).onChange((v) => { buildDisplayPipeline(v); rebuildDisplayBindGroup(); });
-
-const fObj = gui.addFolder('Objects');
-fObj.add({ addSphere: () => {
-  const mesh = new THREE.Mesh(new THREE.SphereGeometry(1.0, 48, 32),
-    new THREE.MeshStandardMaterial({ color: 0xffffff, metalness: 0.0, roughness: 0.3 }));
-  mesh.position.set((Math.random() - 0.5) * 6, 1.0, (Math.random() - 0.5) * 6);
-  scene.add(mesh); extractTriangles(mesh); uploadScene();
-} }, 'addSphere').name('Add Sphere');
-fObj.add({ addBox: () => {
-  const mesh = new THREE.Mesh(new THREE.BoxGeometry(1.4, 1.4, 1.4),
-    new THREE.MeshStandardMaterial({ color: 0xcc5577, metalness: 0.0, roughness: 0.4 }));
-  mesh.position.set((Math.random() - 0.5) * 6, 0.7, (Math.random() - 0.5) * 6);
-  scene.add(mesh); extractTriangles(mesh); uploadScene();
-} }, 'addBox').name('Add Box');
-fObj.add({ load: () => loadFile() }, 'load').name('Load OBJ/GLTF');
+function addPrimitive(kind) {
+  const sb = current.sb;
+  const f = new THREE.Vector3(-Math.sin(player.yaw), 0, -Math.cos(player.yaw));
+  const c = player.pos.clone().addScaledVector(f, 5);
+  const col = new THREE.Color().setHSL(Math.random(), 0.6, 0.5);
+  if (kind === 'sphere') {
+    const r = 0.9;
+    const m = sb.material({ albedo: [col.r, col.g, col.b], rough: Math.random() < 0.5 ? 0.05 : 0.5, metal: Math.random() < 0.4 ? 1 : 0 });
+    sb.sphere([c.x, r, c.z], r, m, 32, 20);
+    sb.colliders.push({ min: [c.x - r, 0, c.z - r], max: [c.x + r, 2 * r, c.z + r] });
+  } else {
+    const m = sb.material({ albedo: [col.r, col.g, col.b], rough: 0.4 });
+    sb.box(c.x - 0.7, 0, c.z - 0.7, c.x + 0.7, 1.4, c.z + 0.7, m, { collide: true });
+  }
+  uploadScene(sb);
+}
 
 function loadFile() {
   const inp = document.createElement('input');
@@ -815,10 +1883,19 @@ function loadFile() {
     const ext = file.name.split('.').pop().toLowerCase();
     const onLoad = (obj) => {
       const root = obj.scene || obj;
-      root.position.y += 1.0;
-      scene.add(root);
-      root.traverse((o) => { if (o.isMesh) extractTriangles(o); });
-      uploadScene();
+      // 플레이어 앞 6m 지점, 최대 4m 크기로 배치
+      const box = new THREE.Box3().setFromObject(root);
+      const size = box.getSize(new THREE.Vector3());
+      const s = 4 / Math.max(size.x, size.y, size.z, 1e-6);
+      root.scale.multiplyScalar(s);
+      root.updateMatrixWorld(true);
+      box.setFromObject(root);
+      const f = new THREE.Vector3(-Math.sin(player.yaw), 0, -Math.cos(player.yaw));
+      const target = player.pos.clone().addScaledVector(f, 6);
+      const ctr = box.getCenter(new THREE.Vector3());
+      root.position.add(new THREE.Vector3(target.x - ctr.x, -box.min.y, target.z - ctr.z));
+      root.traverse((o) => { if (o.isMesh) current.sb.fromThreeMesh(o); });
+      uploadScene(current.sb);
       URL.revokeObjectURL(url);
     };
     if (ext === 'obj') new OBJLoader().load(url, onLoad);
@@ -828,109 +1905,220 @@ function loadFile() {
 }
 
 // ---------------------------------------------------------------------------
-// Resize / interaction
+// Resolution-dependent resources
+//   버퍼/텍스처는 최대 해상도로 한 번만 만들고, 실제 렌더 크기는 유니폼으로 지정
+//   → 자동 해상도가 바뀌어도 재할당/누적 리셋 없이 재투영으로 이어진다.
 // ---------------------------------------------------------------------------
-let lastInteractTime = 0;
-controls.addEventListener('change', () => { lastInteractTime = Date.now(); resetAccum(); });
+let maxW = 1, maxH = 1;
+let histA, histB, colorTex, depthTex;
+let bgAB, bgBA, displayBG;
+let ping = 0;
+let rw = 1, rh = 1, prevW = 1, prevH = 1;
+let needReset = true;
+let staticFrames = 0;
 
-function resize() {
-  const dpr = Math.min(window.devicePixelRatio || 1, 2);
-  const cw = Math.max(1, Math.floor(canvas.clientWidth * dpr));
-  const ch = Math.max(1, Math.floor(canvas.clientHeight * dpr));
-  canvas.width = cw; canvas.height = ch;
-  camera.aspect = cw / ch;
-  camera.updateProjectionMatrix();
-  const scale = params.targetRes;
-  const w = Math.max(1, Math.floor(cw * scale));
-  const h = Math.max(1, Math.floor(ch * scale));
-  if (w !== ptWidth || h !== ptHeight) createPtResources(w, h);
+function createResources() {
+  for (const r of [histA, histB, colorTex, depthTex]) if (r) r.destroy();
+  const bytes = maxW * maxH * 32;
+  histA = device.createBuffer({ size: bytes, usage: GPUBufferUsage.STORAGE });
+  histB = device.createBuffer({ size: bytes, usage: GPUBufferUsage.STORAGE });
+  const tex = (fmt) => device.createTexture({ size: [maxW, maxH], format: fmt, usage: GPUTextureUsage.STORAGE_BINDING | GPUTextureUsage.TEXTURE_BINDING | GPUTextureUsage.COPY_SRC });
+  colorTex = tex('rgba16float');
+  depthTex = tex('r32float');
+  displayBG = device.createBindGroup({
+    layout: displayBGL,
+    entries: [
+      { binding: 0, resource: colorTex.createView() },
+      { binding: 1, resource: depthTex.createView() },
+      { binding: 2, resource: { buffer: dispUniform } },
+    ],
+  });
+  rebuildBindGroups();
+  resetAccum();
 }
-window.addEventListener('resize', resize);
+
+function rebuildBindGroups() {
+  if (!histA || !bvhBuffer) return;
+  const mk = (src, dst) => device.createBindGroup({
+    layout: computeBGL,
+    entries: [
+      { binding: 0, resource: { buffer: uniformBuffer } },
+      { binding: 1, resource: { buffer: bvhBuffer } },
+      { binding: 2, resource: { buffer: geoBuffer } },
+      { binding: 3, resource: { buffer: nrmBuffer } },
+      { binding: 4, resource: { buffer: matBuffer } },
+      { binding: 5, resource: { buffer: src } },
+      { binding: 6, resource: { buffer: dst } },
+      { binding: 7, resource: colorTex.createView() },
+      { binding: 8, resource: depthTex.createView() },
+    ],
+  });
+  bgAB = mk(histA, histB);
+  bgBA = mk(histB, histA);
+}
+
+function resetAccum() { needReset = true; staticFrames = 0; }
+
+function resize(force) {
+  const dpr = Math.min(window.devicePixelRatio || 1, 2);
+  const cssW = Math.max(1, canvas.clientWidth), cssH = Math.max(1, canvas.clientHeight);
+  canvas.width = Math.floor(cssW * dpr); canvas.height = Math.floor(cssH * dpr);
+  camera.aspect = cssW / cssH;
+  camera.updateProjectionMatrix();
+  // 최대 렌더 해상도 = CSS 픽셀 * maxRes (스토리지 바인딩 한도 내)
+  let mw = Math.max(1, Math.floor(cssW * params.maxRes)), mh = Math.max(1, Math.floor(cssH * params.maxRes));
+  const limit = Math.floor(device.limits.maxStorageBufferBindingSize / 32);
+  if (mw * mh > limit) { const k = Math.sqrt(limit / (mw * mh)); mw = Math.floor(mw * k); mh = Math.floor(mh * k); }
+  mw = Math.min(mw, device.limits.maxTextureDimension2D); mh = Math.min(mh, device.limits.maxTextureDimension2D);
+  if (force || mw !== maxW || mh !== maxH) { maxW = mw; maxH = mh; createResources(); }
+}
+window.addEventListener('resize', () => resize(false));
+
+// ---------------------------------------------------------------------------
+// Sky / sun from elevation (시간대에 따라 하늘 색 자동)
+// ---------------------------------------------------------------------------
+function computeSky() {
+  const el = params.sunElevation, az = params.sunAzimuth;
+  const day = smoothstep(0.0, 0.55, el);
+  const up = smoothstep(-0.14, 0.04, el);
+  const zenith = lerp3([0.003, 0.005, 0.014], lerp3([0.10, 0.17, 0.38], [0.10, 0.25, 0.62], day), up);
+  const horizon = lerp3([0.008, 0.012, 0.024], lerp3([1.05, 0.52, 0.26], [0.62, 0.74, 0.90], day), up);
+  const ground = lerp3([0.004, 0.004, 0.005], [0.10, 0.09, 0.08], up);
+  let tint = lerp3([1.0, 0.36, 0.10], [1.0, 0.93, 0.84], smoothstep(0.0, 0.5, el));
+  let dir, E, radius = 0.02;
+  if (el > -0.03) {
+    dir = [Math.cos(el) * Math.cos(az), Math.sin(el), Math.cos(el) * Math.sin(az)];
+    const k = params.sunIntensity * smoothstep(-0.03, 0.05, el) * (0.45 + 0.55 * smoothstep(0.0, 0.4, el));
+    E = tint.map((c) => c * k);
+  } else {
+    // 달빛
+    const mel = 0.75, maz = az + Math.PI;
+    dir = [Math.cos(mel) * Math.cos(maz), Math.sin(mel), Math.cos(mel) * Math.sin(maz)];
+    tint = [0.55, 0.65, 1.0];
+    const k = 0.07 * smoothstep(-0.03, -0.2, el);
+    E = tint.map((c) => c * k);
+    radius = 0.015;
+  }
+  const night = 1 - smoothstep(-0.12, 0.06, el);
+  const cosMax = Math.cos(radius);
+  const solid = 2 * Math.PI * (1 - cosMax);
+  return { zenith, horizon, ground, tint, dir, E, cosMax, solid, night };
+}
 
 // ---------------------------------------------------------------------------
 // Uniform update
 // ---------------------------------------------------------------------------
-function updateUniforms(w, h) {
-  camera.updateMatrixWorld(true);
-  const invProj = camera.projectionMatrixInverse.elements;
-  const invView = camera.matrixWorld.elements;
-  for (let i = 0; i < 16; i++) uF[i] = invProj[i];
-  for (let i = 0; i < 16; i++) uF[16 + i] = invView[i];
-  uF[32] = camera.position.x; uF[33] = camera.position.y; uF[34] = camera.position.z;
-  uF[35] = frameCount;
-  uU[36] = w; uU[37] = h; uU[38] = params.bounces; uU[39] = params.maxSamples;
-  uF[40] = params.envIntensity; uF[41] = params.sunAzimuth; uF[42] = params.sunElevation; uF[43] = params.sunSize;
-  uF[44] = params.sunIntensity; uF[45] = 0; uF[46] = 0; uF[47] = 0;
-  const sz = hexToRgb(params.skyZenith); uF[48] = sz[0]; uF[49] = sz[1]; uF[50] = sz[2]; uF[51] = 0;
-  const sh = hexToRgb(params.skyHorizon); uF[52] = sh[0]; uF[53] = sh[1]; uF[54] = sh[2]; uF[55] = 0;
-  const gc = hexToRgb(params.groundColor); uF[56] = gc[0]; uF[57] = gc[1]; uF[58] = gc[2]; uF[59] = 0;
-  const sc = hexToRgb(params.sunColor); uF[60] = sc[0]; uF[61] = sc[1]; uF[62] = sc[2]; uF[63] = 0;
-  device.queue.writeBuffer(uniformBuffer, 0, uF.buffer);
+const prevVP = new THREE.Matrix4();
+const curVP = new THREE.Matrix4();
+const lastView = new Float32Array(16);
+let frameIndex = 0;
+
+function writeUniforms(isStatic) {
+  const ip = camera.projectionMatrixInverse.elements, iv = camera.matrixWorld.elements;
+  for (let i = 0; i < 16; i++) { uF[i] = ip[i]; uF[16 + i] = iv[i]; uF[32 + i] = prevVP.elements[i]; }
+  uF[48] = camera.position.x; uF[49] = camera.position.y; uF[50] = camera.position.z; uF[51] = frameIndex;
+  uU[52] = rw; uU[53] = rh; uU[54] = prevW; uU[55] = prevH;
+  const flags = (needReset ? 1 : 0) | (isStatic ? 2 : 0) | (current?.env.wheat ? 4 : 0);
+  uU[56] = params.bounces; uU[57] = flags; uU[58] = 0; uU[59] = 0;
+  const s = computeSky();
+  uF.set([...s.dir, s.cosMax], 60);
+  uF.set([...s.E, s.solid], 64);
+  uF.set([...s.tint, s.night], 68);
+  uF.set([...s.zenith, params.fog], 72);
+  uF.set([...s.horizon, params.godrays], 76);
+  uF.set([...s.ground, params.envIntensity], 80);
+  uF.set([4096, 24, performance.now() / 1000, 48], 84);
+  device.queue.writeBuffer(uniformBuffer, 0, uF);
 }
 
 // ---------------------------------------------------------------------------
-// Main loop
+// Main loop: GPU 백프레셔(최대 2프레임 in-flight) + 자동 해상도
 // ---------------------------------------------------------------------------
-let fpsT = performance.now(), fpsN = 0, fpsV = 0;
+let inFlight = 0;
+let lastT = performance.now();
+let fpsT = lastT, fpsN = 0, fpsV = 0;
+let lastMoveT = 0, lastAdjustT = 0, lastDownT = 0;
 
-function frame() {
+function adaptResolution(now) {
+  if (!params.autoRes) return;
+  if (now - lastAdjustT < 600 || fpsV === 0) return;
+  const moving = now - lastMoveT < 1500;
+  if (!moving && fpsV >= 24) return; // 정지 상태에서는 수렴 품질을 위해 유지
+  lastAdjustT = now;
+  const t = params.targetFps;
+  if (fpsV < t - 3) {
+    params.resScale = Math.max(0.25, params.resScale * Math.max(0.7, Math.sqrt(fpsV / t)));
+    lastDownT = now;
+  } else if (fpsV > t + 10 && now - lastDownT > 2500) {
+    params.resScale = Math.min(1.0, params.resScale * 1.07);
+  }
+}
+
+function frame(now) {
   requestAnimationFrame(frame);
-  const interacting = (Date.now() - lastInteractTime) < 150;
+  const dt = Math.min(0.1, (now - lastT) / 1000);
+  lastT = now;
+  updatePlayer(dt);
+  if (!current || !bgAB) return;
+  if (inFlight >= 2) return;
 
-  const wantScale = interacting ? 0.3 : params.targetRes;
-  const cw = canvas.width, ch = canvas.height;
-  const w = Math.max(1, Math.floor(cw * wantScale));
-  const h = Math.max(1, Math.floor(ch * wantScale));
-  if (w !== ptWidth || h !== ptHeight) createPtResources(w, h);
+  adaptResolution(now);
+  const scale = params.resScale;
+  rw = Math.max(1, Math.min(maxW, Math.floor(maxW * scale)));
+  rh = Math.max(1, Math.min(maxH, Math.floor(maxH * scale)));
 
-  controls.update();
-  updateUniforms(ptWidth, ptHeight);
+  // 카메라 정지 여부
+  const vm = camera.matrixWorld.elements;
+  let same = true;
+  for (let i = 0; i < 16; i++) if (Math.abs(vm[i] - lastView[i]) > 1e-6) { same = false; break; }
+  lastView.set(vm);
+  if (!same) lastMoveT = now;
+  const isStatic = same && rw === prevW && rh === prevH && !needReset;
+  staticFrames = isStatic ? staticFrames + 1 : 0;
+
+  camera.updateProjectionMatrix();
+  writeUniforms(isStatic);
+  dF.set([rw, rh, 1 / rw, 1 / rh, canvas.width, canvas.height, params.exposure, 0.35, params.denoise, 0, 0, 0]);
+  device.queue.writeBuffer(dispUniform, 0, dF);
 
   const cmd = device.createCommandEncoder();
-
-  if (frameCount < params.maxSamples && computeBindGroup) {
-    const pass = cmd.beginComputePass();
-    pass.setPipeline(computePipeline);
-    pass.setBindGroup(0, computeBindGroup);
-    pass.dispatchWorkgroups(Math.ceil(ptWidth / 8), Math.ceil(ptHeight / 8));
-    pass.end();
-    frameCount++;
-  }
-
-  if (displayBindGroup) {
-    const rpass = cmd.beginRenderPass({
-      colorAttachments: [{
-        view: ctx.getCurrentTexture().createView(),
-        loadOp: 'clear', storeOp: 'store', clearValue: { r: 0, g: 0, b: 0, a: 1 },
-      }],
-    });
-    rpass.setPipeline(displayPipeline);
-    rpass.setBindGroup(0, displayBindGroup);
-    rpass.draw(3);
-    rpass.end();
-  }
-
+  const pass = cmd.beginComputePass();
+  pass.setPipeline(computePipeline);
+  pass.setBindGroup(0, ping === 0 ? bgAB : bgBA);
+  pass.dispatchWorkgroups(Math.ceil(rw / 8), Math.ceil(rh / 8));
+  pass.end();
+  const rpass = cmd.beginRenderPass({
+    colorAttachments: [{ view: ctx.getCurrentTexture().createView(), loadOp: 'clear', storeOp: 'store', clearValue: { r: 0, g: 0, b: 0, a: 1 } }],
+  });
+  rpass.setPipeline(displayPipeline);
+  rpass.setBindGroup(0, displayBG);
+  rpass.draw(3);
+  rpass.end();
   device.queue.submit([cmd.finish()]);
+  inFlight++;
+  device.queue.onSubmittedWorkDone().then(() => { inFlight--; fpsN++; });
 
-  fpsN++;
-  const now = performance.now();
+  ping ^= 1;
+  needReset = false;
+  prevW = rw; prevH = rh;
+  curVP.multiplyMatrices(camera.projectionMatrix, camera.matrixWorldInverse);
+  prevVP.copy(curVP);
+  frameIndex++;
+
   if (now - fpsT > 500) { fpsV = Math.round(fpsN * 1000 / (now - fpsT)); fpsN = 0; fpsT = now; }
-  hSpp.textContent = frameCount;
   hFps.textContent = fpsV;
-  hRes.textContent = `${ptWidth}x${ptHeight}`;
-  if (frameCount >= params.maxSamples) hStatus.textContent = 'converged';
-  else if (interacting) hStatus.textContent = 'preview';
-  else hStatus.textContent = 'rendering';
+  hRes.textContent = `${rw}x${rh} (${Math.round(scale * 100)}%)`;
+  hSpp.textContent = isStatic ? staticFrames + 1 : '재투영';
+  hStatus.textContent = `${player.fly ? '비행' : '걷기'} · ${Object.keys(SCENE_LABELS).find((k) => SCENE_LABELS[k] === params.scene)}`;
 }
 
 // ---------------------------------------------------------------------------
 // Boot
 // ---------------------------------------------------------------------------
-buildDefaultScene();
-resize();
-uploadScene();
-createPtResources(ptWidth, ptHeight);
+resize(true);
+loadScene(params.scene);
 requestAnimationFrame(frame);
+window.__pt = { params, player, setScene, get fps() { return fpsV; }, debug: { device, get colorTex() { return colorTex; }, get size() { return [rw, rh]; } } };
 </script>
 </body>
 </html>
