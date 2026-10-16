@@ -5,7 +5,7 @@
 // ------------------------------------------------------------
 import GUI from 'lil-gui';
 import { state } from './state.js?v=a3299825';
-import { SCENE_LABELS } from './scenes.js?v=5075cdfc';
+import { SCENE_LABELS } from './scenes.js?v=ea739e2e';
 
 export function setupGUI({ onScene, onQuality, onEnvChange, onInteract, onBouncesChange, onFilterChange, onExposureChange, onFov, onAddSphere, onAddBox, onLoadModel }) {
     const gui = new GUI({ title: 'Path Tracer' });

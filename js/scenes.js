@@ -414,7 +414,7 @@ function buildCity(q) {
     return {
         entities: gb.toEntities(), colliders: gb.colliders,
         spawn: { pos: [0, 1.7, -14], yaw: Math.PI, pitch: 0.08 },
-        env: { sunAzimuth: 205, sunElevation: 40, sunSize: 3, exposure: 1.25 },
+        env: { sunAzimuth: 182, sunElevation: 58, sunSize: 3, exposure: 1.25 },
     };
 }
 
