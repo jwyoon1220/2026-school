@@ -18,6 +18,10 @@ export function entityToMesh(entity) {
     const [rx, ry, rz] = entity.transform.rotation;
     const [sx, sy, sz] = entity.transform.scale;
 
+    // 장면 생성기(scenes.js)가 만든 병합 메시: 같은 객체를 그대로 사용
+    // (매 빌드 동일 객체라 생성기 캐시/래스터 미리보기와 공유 가능)
+    if (entity.type === 'mesh') return entity.mesh;
+
     if (entity.type === 'model') {
         const group = entity.modelData.clone(true);
         // 클론된 메시들의 머티리얼도 공유하지 않도록 복제 (path tracer가 머티리얼별 인덱싱을 하므로 안전하게)
@@ -57,7 +61,7 @@ export function entityToMesh(entity) {
 export function entityBounds(entity) {
     const mesh = entityToMesh(entity);
     const box = new THREE.Box3().setFromObject(mesh);
-    if (entity.type !== 'model') mesh.geometry = null; // 캐시 geometry는 dispose하지 않음
+    if (entity.type !== 'model' && entity.type !== 'mesh') mesh.geometry = null; // 캐시 geometry는 dispose하지 않음
     return box;
 }
 
@@ -99,6 +103,7 @@ export function cullEntities(entities, camera) {
 // material.textures.setTextures를 건너뛴다 (드래그로 위치만 바뀌는 경우가 대부분이라
 // 텍스처 집합은 거의 항상 동일 -> 이 스킵만으로도 체감 차이가 큼).
 let lastTextureSet = null;
+let lastTextureSize = 0;
 
 function sameTextures(a, b) {
     if (a === b) return true;
@@ -107,18 +112,24 @@ function sameTextures(a, b) {
     return true;
 }
 
-export function buildPathTracerScene({ entities, camera, renderer, ptRenderer, ptSceneGenerator }) {
+export function buildPathTracerScene({ entities, camera, renderer, ptRenderer, ptSceneGenerator, textureSize = 1024 }) {
     const { visible, culled, total } = cullEntities(entities, camera);
 
     const group = new THREE.Group();
-    for (const e of visible) group.add(entityToMesh(e));
+    for (const e of visible) {
+        const m = entityToMesh(e);
+        if (m.isMesh) { m.castShadow = true; m.receiveShadow = true; }
+        else m.traverse((c) => { if (c.isMesh) { c.castShadow = true; c.receiveShadow = true; } });
+        group.add(m);
+    }
+    group.updateMatrixWorld(true);
 
     ptSceneGenerator.setObjects(group);
     const { bvh, geometry, materials, textures, iesTextures } = ptSceneGenerator.generate();
     const material = ptRenderer.material;
 
     if (!bvh || !geometry) {
-        return { ok: false, culled, total };
+        return { ok: false, culled, total, group };
     }
 
     material.bvh.updateFrom(bvh);
@@ -129,12 +140,14 @@ export function buildPathTracerScene({ entities, camera, renderer, ptRenderer, p
     material.materialIndexAttribute.updateFrom(geometry.attributes.materialIndex);
 
     // [최적화] 텍스처 집합이 이전과 동일하면 재업로드 생략 (가장 비용이 큰 단계 중 하나)
-    if (!sameTextures(textures, lastTextureSet)) {
-        material.textures.setTextures(renderer, textures, 1024, 1024);
+    // 텍스처 배열 크기는 품질 프리셋(저사양 512)에 따름 → GPU 메모리/대역폭 절약
+    if (!sameTextures(textures, lastTextureSet) || textureSize !== lastTextureSize) {
+        material.textures.setTextures(renderer, textures, textureSize, textureSize);
         lastTextureSet = textures;
+        lastTextureSize = textureSize;
     }
     material.materials.updateFrom(materials, textures);
     material.lights.updateFrom([], iesTextures || []); // 조명은 하늘(env)이 담당
 
-    return { ok: true, culled, total };
+    return { ok: true, culled, total, group, materials, textures };
 }

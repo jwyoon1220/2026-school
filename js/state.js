@@ -28,28 +28,30 @@ export const state = {
         environment: true,   // 환경맵 재생성 필요
     },
     params: {
-        // 렌더
-        // [최적화] bounces는 diffuse 경로 깊이만 좌우하고, 유리(transmission) 굴절은
-        // 별도 transmissiveBounces(라이브러리 기본값 5)로 처리되므로 6→4로 낮춰도
-        // 유리 품질엔 영향이 거의 없고 샘플당 비용은 크게 줄어든다.
-        bounces: 4,
-        // [최적화] 768→512: "done" 도달까지 누적 시간을 줄임. 필요하면 슬라이더로 올릴 수 있음.
-        maxSamples: 512,
-        resolutionScale: 1.0,
+        // 장면 / 품질
+        scene: 'city',
+        quality: 'low',          // 'low' | 'high' (quality.js의 PRESETS 키, 시작 시 자동 감지)
+        // 이동 중 미리보기: 'auto' = 패스트레이싱을 시도하다가 목표 FPS가 안 나오면 래스터로 전환
+        previewMode: 'auto',
+        // 렌더 (품질 프리셋이 덮어씀)
+        bounces: 3,
+        movingBounces: 1,
+        maxSamples: 256,
+        resolutionScale: 0.55,
         targetFPS: 30,
-        // [최적화] 0.5→0.65: firefly(밝은 점 노이즈) 억제를 강화 → 같은 샘플 수에서 더 빨리 깨끗해 보임
+        // firefly(밝은 점 노이즈) 억제
         filterGlossy: 0.65,
-        exposure: 1.6,
-        // 하늘/태양
-        envIntensity: 2.0,
-        skyZenith: '#5e9bd6',
-        skyHorizon: '#e8f3ff',
-        groundColor: '#4a4540',
-        sunColor: '#fff4e0',
-        sunAzimuth: 35,
-        sunElevation: 55,
-        sunSize: 4.0,
-        sunIntensity: 40.0,
+        denoise: 1.0,
+        exposure: 1.25,
+        // 하늘/태양 (색은 sky.js가 고도에서 자동 계산)
+        envIntensity: 1.0,
+        sunAzimuth: 250,
+        sunElevation: 24,
+        sunSize: 3.0,
+        sunIntensity: 3.0,
+        // 플레이어
+        walkSpeed: 4.5,
+        fov: 70,
     },
 };
 
@@ -57,6 +59,12 @@ export function addEntity(entity) {
     state.entities.set(entity.id, entity);
     state.dirty.geometry = true;
     return entity;
+}
+
+export function clearEntities() {
+    state.entities.clear();
+    state.selectedId = null;
+    state.dirty.geometry = true;
 }
 
 export function removeEntity(id) {

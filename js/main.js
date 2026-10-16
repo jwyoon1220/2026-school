@@ -3,163 +3,213 @@
 // 엔트리포인트. 각 모듈을 초기화하고 연결만 한다 (로직은 각 모듈에 위치).
 // ------------------------------------------------------------
 import * as THREE from 'three';
-import { OrbitControls } from 'three/addons/controls/OrbitControls.js';
 import { computeBoundsTree, disposeBoundsTree } from 'three-mesh-bvh';
 
-import { state, allEntities, createDefaultEntities, addEntity, markEnvironmentDirty } from './state.js?v=e7cee95d';
-import { makeSkyTexture } from './sky.js?v=4bcaf188';
-import { buildPathTracerScene } from './scene-build.js?v=cdf1dbd1';
-import { createPathTracerCore, stepFrame, onInteract, onWindowResize } from './renderer-core.js?v=04570f53';
-import { createSelection } from './selection.js?v=702877e8';
-import { setupGUI } from './gui.js?v=8033d355';
-import { loadModelFile } from './loader.js?v=6018739d';
+import { state, allEntities, addEntity, clearEntities, makeId, markEnvironmentDirty } from './state.js?v=a3299825';
+import { makeSkyTexture } from './sky.js?v=af550388';
+import { buildPathTracerScene } from './scene-build.js?v=4cc44fb7';
+import { createPathTracerCore, stepFrame, onInteract, resetAdaptive, resetSceneGenerator, onWindowResize } from './renderer-core.js?v=6a94f712';
+import { setupGUI } from './gui.js?v=0c55b0b8';
+import { loadModelFile } from './loader.js?v=e811bb98';
+import { SCENES, applyNightToMaterials } from './scenes.js?v=5075cdfc';
+import { createPlayer } from './player.js?v=af925a16';
+import { createRaster } from './raster.js?v=3c80f8cf';
+import { PRESETS, detectQuality } from './quality.js?v=5baa9a25';
 
 THREE.BufferGeometry.prototype.computeBoundsTree = computeBoundsTree;
 THREE.BufferGeometry.prototype.disposeBoundsTree = disposeBoundsTree;
 
+const params = state.params;
+const infoEl = document.getElementById('samples-info');
+const loadingEl = document.getElementById('loading');
+
 // ---------- 렌더러 / 카메라 ----------
 const renderer = new THREE.WebGLRenderer({ antialias: false, powerPreference: 'high-performance' });
 renderer.toneMapping = THREE.ACESFilmicToneMapping;
-renderer.toneMappingExposure = state.params.exposure;
-renderer.setSize(window.innerWidth, window.innerHeight);
-// [최적화] devicePixelRatio를 그대로 쓰면 레티나(2x)에서 픽셀 수가 4배가 되어
-// 패스트레이싱 비용도 4배가 된다. 노이즈가 있는 패스트레이싱 결과는 1x에서도
-// 체감 품질 차이가 작으므로 1로 고정하고, 세밀한 트레이드오프는
-// GUI의 Resolution 슬라이더(resolutionScale)로 조절하게 한다.
+renderer.toneMappingExposure = params.exposure;
+// [최적화] devicePixelRatio 1 고정: 레티나에서 픽셀 수 4배 → 패스트레이싱 비용 4배를 피함
 renderer.setPixelRatio(1);
+renderer.setSize(window.innerWidth, window.innerHeight);
 document.body.appendChild(renderer.domElement);
 
-const camera = new THREE.PerspectiveCamera(55, window.innerWidth / window.innerHeight, 0.1, 1000);
-camera.position.set(6, 4.5, 9);
+const camera = new THREE.PerspectiveCamera(params.fov, window.innerWidth / window.innerHeight, 0.05, 3000);
 
-const orbitControls = new OrbitControls(camera, renderer.domElement);
-orbitControls.target.set(0, 1.2, 0);
-orbitControls.enableDamping = true;   // [최적화] 관성 댐핑: 드래그 후 카메라가 부드럽게 멈춤
-orbitControls.dampingFactor = 0.08;
-orbitControls.update();
+// ---------- 품질 자동 감지 ----------
+const detected = detectQuality(renderer);
+params.quality = detected.preset;
+console.log(`GPU: ${detected.gpu} → 품질 '${detected.preset}'`, detected.reason);
+function preset() { return PRESETS[params.quality]; }
+function applyPresetParams() {
+    const q = preset();
+    params.bounces = q.bounces;
+    params.movingBounces = q.movingBounces;
+    params.maxSamples = q.maxSamples;
+    params.resolutionScale = q.resolutionScale;
+}
+applyPresetParams();
 
-// 보조 씬 (선택 기즈모 등 래스터 오버레이용 — 패스트레이서와 별개)
-const helperScene = new THREE.Scene();
-
-// ---------- 패스트레이서 코어 ----------
-const core = createPathTracerCore(renderer, camera);
-
-// 카메라가 회전/이동/줌될 때마다 누적 버퍼를 리셋해야 한다.
-// 안 하면 이전 카메라 위치에서 쌓인 샘플이 새 위치 화면에 그대로 블렌딩되어
-// "잔상"처럼 남는다 (댐핑 관성으로 멈출 때까지 매 프레임 change가 발생하므로
-// 멈출 때까지 계속 리셋 -> 정지 후 깨끗하게 수렴 시작).
-orbitControls.addEventListener('change', () => onInteract(core));
-
-// ---------- 초기 데이터 ----------
-for (const e of createDefaultEntities()) addEntity(e);
-
-let envTex = null;
-function refreshEnvironment() {
-    if (envTex) envTex.dispose();
-    envTex = makeSkyTexture(renderer, state.params);
-    core.ptRenderer.material.envMapInfo.updateFrom(envTex);
-    core.ptRenderer.material.environmentIntensity = state.params.envIntensity;
-    onInteract(core);
+// ---------- 코어 ----------
+const raster = createRaster(renderer);
+const core = createPathTracerCore(renderer, camera, raster.scene);
+const ptMat = core.ptRenderer.material;
+function applyRenderSettings() {
+    const q = preset();
+    ptMat.bounces = params.bounces;
+    ptMat.transmissiveBounces = q.transmissiveBounces;
+    ptMat.filterGlossyFactor = params.filterGlossy;
+    raster.setShadowSize(q.shadowMapSize);
+    renderer.toneMappingExposure = params.exposure;
 }
 
-// ---------- 선택/이동 ----------
-const selection = createSelection({
-    renderer, camera, scene: helperScene, orbitControls,
-    onDragStateChange: (dragging) => {
-        if (!dragging) onInteract(core); // 드래그 종료 시 누적 리셋
+const player = createPlayer(camera, renderer.domElement, {
+    onSceneKey: (n) => {
+        const name = ['city', 'wheat', 'showcase'][n - 1];
+        if (name) { params.scene = name; gui.controllers[0].updateDisplay(); loadScene(name); }
     },
 });
 
-// ---------- GUI ----------
-setupGUI({
-    onEnvChange: () => { markEnvironmentDirty(); refreshEnvironment(); },
-    onInteract: () => onInteract(core),
-    onBouncesChange: () => { core.ptRenderer.bounces = state.params.bounces; onInteract(core); },
-    onFilterChange: () => { core.ptRenderer.material.filterGlossyFactor = state.params.filterGlossy; onInteract(core); },
-    onExposureChange: () => { renderer.toneMappingExposure = state.params.exposure; onInteract(core); },
-    onRemoveSelected: (id) => selection.select(null),
+// ---------- 환경 (하늘/태양) ----------
+let envTex = null;
+let lastBuild = null;   // { materials, textures } — 밤 조명 갱신용
+function refreshEnvironment() {
+    if (envTex) envTex.dispose();
+    // 512x256: 태양 원반이 각지게 보이지 않을 정도의 해상도 (CDF 계산도 수십 ms 이내)
+    const sky = makeSkyTexture(renderer, params, 512, 256);
+    envTex = sky.texture;
+    ptMat.envMapInfo.updateFrom(envTex);
+    ptMat.environmentIntensity = 1.0; // 하늘 밝기는 텍스처에 이미 반영
+    raster.setEnvironment(params, sky.palette);
+    // 밤에는 창문/가로등 발광
+    if (lastBuild && applyNightToMaterials(lastBuild.materials, sky.palette.night)) {
+        ptMat.materials.updateFrom(lastBuild.materials, lastBuild.textures);
+    }
+    state.dirty.environment = false;
+    onInteract(core);
+}
+
+// ---------- 장면 ----------
+function rebuildScene() {
+    // 실패해도 매 프레임 재시도하지 않도록 먼저 플래그를 내림
+    state.dirty.geometry = false;
+    let res;
+    try {
+        res = buildPathTracerScene({
+            entities: allEntities(), camera, renderer,
+            ptRenderer: core.ptRenderer, ptSceneGenerator: core.ptSceneGenerator,
+            textureSize: preset().textureSize,
+        });
+    } catch (err) {
+        console.error('장면 빌드 실패:', err);
+        infoEl.innerText = `Error: ${err.message}`;
+        return false;
+    }
+    raster.setContent(res.group);
+    if (!res.ok) { infoEl.innerText = 'Error: No BVH generated'; return false; }
+    lastBuild = { materials: res.materials, textures: res.textures };
+    // 새 머티리얼에도 현재 시간대 발광 적용
+    refreshEnvironment();
+    return true;
+}
+
+let loadToken = 0;
+function loadScene(name, keepPlayer = false) {
+    const token = ++loadToken;
+    loadingEl.style.display = 'flex';
+    // 로딩 문구가 먼저 그려지도록 다음 틱에 무거운 작업 실행
+    setTimeout(() => {
+        if (token !== loadToken) return;
+        const t0 = performance.now();
+        const built = SCENES[name](preset());
+        clearEntities();
+        resetSceneGenerator(core);
+        for (const e of built.entities) addEntity(e);
+        player.colliders = built.colliders;
+        if (!keepPlayer) {
+            player.spawn(built.spawn);
+            Object.assign(params, built.env);
+            gui.controllersRecursive().forEach((c) => c.updateDisplay());
+        }
+        applyRenderSettings();
+        rebuildScene();
+        resetAdaptive(core);
+        let tris = 0;
+        for (const e of built.entities) if (e.mesh) tris += e.mesh.geometry.attributes.position.count / 3;
+        console.log(`장면 '${name}': ${built.entities.length} 메시, ${Math.round(tris)} 삼각형, ${(performance.now() - t0).toFixed(0)} ms`);
+        loadingEl.style.display = 'none';
+    }, 30);
+}
+
+// ---------- 오브젝트 추가 ----------
+function addPrimitive(type) {
+    const c = player.ahead(5);
+    const r = type === 'sphere' ? 0.9 : 0.7;
+    addEntity({
+        id: makeId(type), type,
+        transform: { position: [c.x, r, c.z], rotation: [0, 0, 0], scale: type === 'sphere' ? [r, r, r] : [1.4, 1.4, 1.4] },
+        material: { color: Math.random() * 0xffffff, roughness: Math.random() * 0.6, metalness: Math.random() > 0.5 ? 1.0 : 0.0 },
+        pinned: false,
+    });
+    player.colliders.push({ min: [c.x - r, 0, c.z - r], max: [c.x + r, 2 * r, c.z + r] });
+}
+const modelInput = document.getElementById('model-file-input');
+modelInput.addEventListener('change', (event) => {
+    const file = event.target.files[0];
+    if (!file) return;
+    infoEl.innerText = `Loading ${file.name}...`;
+    loadModelFile(file, () => { state.dirty.geometry = true; }, (err) => { infoEl.innerText = `Error: ${err.message}`; }, player.ahead(6));
+    modelInput.value = '';
 });
 
-// ---------- 초기 빌드 ----------
-core.ptRenderer.material.filterGlossyFactor = state.params.filterGlossy;
-core.ptRenderer.bounces = state.params.bounces;
-refreshEnvironment();
+// ---------- GUI ----------
+const gui = setupGUI({
+    onScene: (name) => loadScene(name),
+    onQuality: () => { applyPresetParams(); gui.controllersRecursive().forEach((c) => c.updateDisplay()); loadScene(params.scene, true); },
+    onEnvChange: () => { markEnvironmentDirty(); refreshEnvironment(); },
+    onInteract: () => onInteract(core),
+    onBouncesChange: () => { ptMat.bounces = params.bounces; onInteract(core); },
+    onFilterChange: () => { ptMat.filterGlossyFactor = params.filterGlossy; onInteract(core); },
+    onExposureChange: () => { renderer.toneMappingExposure = params.exposure; refreshEnvironment(); },
+    onFov: () => { camera.fov = params.fov; camera.updateProjectionMatrix(); onInteract(core); },
+    onAddSphere: () => addPrimitive('sphere'),
+    onAddBox: () => addPrimitive('box'),
+    onLoadModel: () => modelInput.click(),
+});
 
-camera.updateMatrixWorld();
-core.ptRenderer.setCamera(camera);
-rebuildScene(); // 최초 BVH
-
-// ---------- 재빌드 ----------
-function rebuildScene() {
-    const info = document.getElementById('samples-info');
-    const res = buildPathTracerScene({
-        entities: allEntities(),
-        camera,
-        renderer,
-        ptRenderer: core.ptRenderer,
-        ptSceneGenerator: core.ptSceneGenerator,
-    });
-    state.dirty.geometry = false;
-    if (!res.ok && info) info.innerText = 'Error: No BVH generated';
-    else console.log(`✅ BVH 재빌드 (컬링: ${res.culled}/${res.total})`);
-    return res.ok;
-}
-
-// 씬 규모가 작아 컬링 재빌드 비용이 이득보다 크므로, 카메라 이동마다
-// 재빌드하지 않음. 컬링은 cullEntities의 임계값(CULL_THRESHOLD) 이하에서 비활성화된다.
-
-// ---------- 윈도우 리사이즈 ----------
 window.addEventListener('resize', () => onWindowResize(core, renderer, camera));
 
-// ---------- 모델 로더 ----------
-const modelInput = document.getElementById('model-file-input');
-if (modelInput) {
-    modelInput.addEventListener('change', (event) => {
-        const file = event.target.files[0];
-        if (!file) return;
-        if (infoEl) infoEl.innerText = `Loading ${file.name}...`;
-        loadModelFile(
-            file,
-            () => { state.dirty.geometry = true; }, // 다음 프레임에 rebuildIfDirty가 처리
-            (err) => { if (infoEl) infoEl.innerText = `Error: ${err.message}`; }
-        );
-        modelInput.value = ''; // 같은 파일 다시 선택 가능하도록
-    });
-}
-
 // ---------- 메인 루프 ----------
-const infoEl = document.getElementById('samples-info');
 let rafId = null;
-
-function animate() {
+let lastT = performance.now();
+function animate(now = performance.now()) {
     rafId = requestAnimationFrame(animate);
-    orbitControls.update(); // [최적화] 댐핑 적용 (입력 없을 때도 호출해야 자연스럽게 감속)
-    stepFrame(core, renderer, camera, state.params, {
-        rebuildIfDirty: () => {
-            if (!state.dirty.geometry) return false;
-            return rebuildScene();
+    const dt = Math.min(0.1, (now - lastT) / 1000);
+    lastT = now;
+    player.speed = params.walkSpeed;
+    const moved = player.update(dt);
+    if (!lastBuild) { renderer.render(raster.scene, camera); return; }
+    raster.follow(camera);
+    stepFrame(core, renderer, camera, params, preset(), {
+        moved,
+        rebuildIfDirty: () => (state.dirty.geometry ? rebuildScene() : false),
+        onInfo: ({ samples, fps, tag }) => {
+            infoEl.innerText = `Samples: ${samples} · ${fps}fps · ${tag}${player.fly ? ' · 비행' : ''}`;
         },
-        onInfo: (text) => { if (infoEl) infoEl.innerText = text; },
     });
-
-    // 기즈모 오버레이: 패스트레이서 출력 위에 추가 렌더 (depth 무시, 항상 위에 표시)
-    if (state.selectedId) {
-        renderer.autoClear = false;
-        renderer.render(helperScene, camera);
-        renderer.autoClear = true;
-    }
 }
 
-// [최적화] 탭이 백그라운드일 때 루프를 완전히 멈춰 GPU/배터리 절약.
-// 복귀 시 누적을 리셋하고 다시 시작 (백그라운드 동안 쌓인 비정상 dt 방지).
+// [최적화] 탭이 백그라운드일 때 루프를 완전히 멈춰 GPU/배터리 절약
 document.addEventListener('visibilitychange', () => {
     if (document.hidden) {
         if (rafId !== null) { cancelAnimationFrame(rafId); rafId = null; }
     } else if (rafId === null) {
-        core.lastFrame = performance.now();
+        lastT = performance.now();
+        core.lastFrame = lastT;
         onInteract(core);
         animate();
     }
 });
 
+applyRenderSettings();
+loadScene(params.scene);
 animate();
+window.__app = { params, player, core, loadScene, get fps() { return core.fps; } };

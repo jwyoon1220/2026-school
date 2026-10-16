@@ -6,7 +6,7 @@
 import * as THREE from 'three';
 import { GLTFLoader } from 'three/addons/loaders/GLTFLoader.js';
 import { OBJLoader } from 'three/addons/loaders/OBJLoader.js';
-import { addEntity, makeId } from './state.js?v=e7cee95d';
+import { addEntity, makeId } from './state.js?v=a3299825';
 
 const gltfLoader = new GLTFLoader();
 const objLoader = new OBJLoader();
@@ -50,7 +50,7 @@ function floorOffset(group, floorY = 0) {
     return floorY - box.min.y;
 }
 
-function addModelEntity(group, name) {
+function addModelEntity(group, name, at) {
     const yOffset = floorOffset(group, 0);
     addEntity({
         id: makeId('model'),
@@ -58,7 +58,7 @@ function addModelEntity(group, name) {
         name,
         modelData: group,
         transform: {
-            position: [0, yOffset, 0],
+            position: [at ? at.x : 0, yOffset, at ? at.z : 0],
             rotation: [0, 0, 0],
             scale: [1, 1, 1],
         },
@@ -69,14 +69,14 @@ function addModelEntity(group, name) {
 
 // 파일 입력을 받아 확장자에 따라 적절한 로더로 처리.
 // onLoaded(): BVH 재빌드를 트리거하기 위한 콜백.
-export function loadModelFile(file, onLoaded, onError) {
+export function loadModelFile(file, onLoaded, onError, at = null) {
     const url = URL.createObjectURL(file);
     const ext = file.name.split('.').pop().toLowerCase();
     const name = file.name;
 
     const finish = (object) => {
         const group = normalizeModel(object);
-        addModelEntity(group, name);
+        addModelEntity(group, name, at);
         URL.revokeObjectURL(url);
         onLoaded();
     };
