@@ -18,10 +18,12 @@ function mulberry32(a) {
     };
 }
 
+// willReadFrequently: CPU 메모리 캔버스 → 픽셀 읽기/쓰기(getImageData)가 GPU 동기화 없이 빠름
+// (텍스처는 한 번 업로드하고 끝이라 GPU 가속 캔버스일 이유가 없다)
 function canvas(size) {
     const c = document.createElement('canvas');
     c.width = c.height = size;
-    return [c, c.getContext('2d')];
+    return [c, c.getContext('2d', { willReadFrequently: true })];
 }
 
 function toTexture(c, srgb) {
@@ -30,18 +32,31 @@ function toTexture(c, srgb) {
     t.colorSpace = srgb ? THREE.SRGBColorSpace : THREE.NoColorSpace;
     t.anisotropy = 1;
     t.needsUpdate = true;
+    // 평균색(선형) 미리 계산: 레이트레이싱 반사에서 맞은 물체 색으로 사용 (rt.js)
+    const d = c.getContext('2d', { willReadFrequently: true }).getImageData(0, 0, c.width, c.height).data;
+    let r = 0, g = 0, b = 0, n = 0;
+    for (let i = 0; i < d.length; i += 4 * 7) { r += d[i]; g += d[i + 1]; b += d[i + 2]; n++; }
+    const lin = (v) => (srgb ? Math.pow(v / n / 255, 2.2) : v / n / 255);
+    t.userData.avg = [lin(r), lin(g), lin(b)];
     return t;
 }
 
-// 잔 노이즈 (그레인)
+// 잔 노이즈 (그레인): 셀마다 흰/검정을 알파 v로 덮는 것과 같은 결과를 픽셀 배열에 직접 계산
+// (셀마다 fillRect 호출하던 방식보다 수십 배 빠름)
 function grain(ctx, size, amount, rng, cell = 2) {
+    const img = ctx.getImageData(0, 0, size, size), d = img.data;
     for (let y = 0; y < size; y += cell) {
         for (let x = 0; x < size; x += cell) {
             const v = (rng() - 0.5) * amount;
-            ctx.fillStyle = v > 0 ? `rgba(255,255,255,${v})` : `rgba(0,0,0,${-v})`;
-            ctx.fillRect(x, y, cell, cell);
+            for (let yy = y; yy < Math.min(size, y + cell); yy++) {
+                for (let xx = x; xx < Math.min(size, x + cell); xx++) {
+                    const i = (yy * size + xx) * 4;
+                    for (let k = 0; k < 3; k++) d[i + k] = v > 0 ? d[i + k] + (255 - d[i + k]) * v : d[i + k] * (1 + v);
+                }
+            }
         }
     }
+    ctx.putImageData(img, 0, 0);
 }
 
 // 부드러운 얼룩 노이즈

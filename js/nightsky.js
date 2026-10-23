@@ -74,6 +74,19 @@ vec3 skyExtinction(float h) {
     return exp(-vec3(0.05, 0.08, 0.15) * airmass);
 }
 
+// 수평선 박무용 저비용 하늘 (별 텍스처/행성/원반 생략 — 박무에 가려 보이지 않음)
+vec3 skyHaze(vec3 d) {
+    vec3 col = horizonCol;
+    float mu = max(dot(d, sunDirW), 0.0);
+    col += sunTint * glowE * (pow(mu, 5.0) * 0.07 + pow(mu, 64.0) * 0.12);
+    float west = max(-d.x, 0.0);
+    col += vec3(0.020, 0.011, 0.005) * lightPollution * west * west;
+    float mm = max(dot(d, moonDir), 0.0);
+    col += vec3(0.05, 0.075, 0.12) * moonGlow * moonUp * (0.25 + 0.6 * pow(mm, 6.0));
+    col += vec3(0.0011, 0.0012, 0.0015) * starIntensity * starVis;   // 지평선 근처 별빛 평균 (소광 후)
+    return col;
+}
+
 vec3 nightSky(vec3 d, bool withDisks) {
     float h = d.y;
     float above = smoothstep(-0.01, 0.004, h);
@@ -279,7 +292,8 @@ export function createNightSky(renderer) {
     return {
         dome,
         // 주광원 원반을 텍셀 입체각으로 정규화해 Float 데이터에 더함 (sky.js와 같은 방식)
-        renderEquirect(W, H, key) {
+        // needData=false면 Float 다운로드(GPU→CPU 동기화로 끊김 유발)를 생략하고 PMREM만 갱신
+        renderEquirect(W, H, key, needData = true) {
             if (!rt || rt.width !== W) {
                 if (rt) rt.dispose();
                 rt = new THREE.WebGLRenderTarget(W, H, { type: THREE.FloatType, format: THREE.RGBAFormat, depthBuffer: false });
@@ -289,10 +303,13 @@ export function createNightSky(renderer) {
             renderer.toneMapping = THREE.NoToneMapping;
             renderer.setRenderTarget(rt);
             renderer.render(eqScene, eqCam);
-            const data = new Float32Array(W * H * 4);
-            renderer.readRenderTargetPixels(rt, 0, 0, W, H, data);
             renderer.setRenderTarget(prevT);
             renderer.toneMapping = prevTM;
+            if (envRT) envRT.dispose();
+            envRT = pmrem.fromEquirectangular(rt.texture);
+            if (!needData) return { dataTexture: null, pmrem: envRT.texture };
+            const data = new Float32Array(W * H * 4);
+            renderer.readRenderTargetPixels(rt, 0, 0, W, H, data);
 
             // 패스트레이서 환경맵용 키 라이트 원반 추가
             if (key && key.E > 0) {
@@ -323,9 +340,6 @@ export function createNightSky(renderer) {
             tex.minFilter = tex.magFilter = THREE.LinearFilter;
             tex.generateMipmaps = false;
             tex.needsUpdate = true;
-            // 래스터 반사용 PMREM (렌더타깃 텍스처를 그대로 사용)
-            if (envRT) envRT.dispose();
-            envRT = pmrem.fromEquirectangular(rt.texture);
             return { dataTexture: tex, pmrem: envRT.texture };
         },
         setPixelSigma(camera, heightPx) {

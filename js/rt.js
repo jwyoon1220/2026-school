@@ -20,7 +20,7 @@ export const rtUniforms = {
     rtLightDir: { value: new THREE.Vector3(0, 1, 0) },   // 월드, 광원 쪽
     rtLightColor: { value: new THREE.Color(0, 0, 0) },   // 조도 (색 * E)
     rtAmbient: { value: new THREE.Color(0.05, 0.05, 0.06) },
-    rtFlags: { value: new THREE.Vector4(1, 1, 0, 0) },   // x: 그림자, y: 반사, z: BVH 준비됨
+    rtFlags: { value: new THREE.Vector4(1, 1, 0, 3000) }, // x: 그림자, y: 반사, z: BVH 준비됨, w: 그림자 광선 최대 거리
 };
 
 // GLSL: BVH 추적 + 맞은 점 셰이딩 (패치/바다 공용)
@@ -38,20 +38,53 @@ uniform vec3 rtLightColor;
 uniform vec3 rtAmbient;
 uniform vec4 rtFlags;
 
-// 가려짐 여부 (1 = 보임)
+// BVH 순회 (three-mesh-bvh의 노드/삼각형 판정 함수 재사용)
+//  - anyHit=true: 가리는 삼각형을 하나라도 찾으면 즉시 종료 (그림자 광선용, 최근접 탐색보다 훨씬 쌈)
+//  - maxDist: 이보다 먼 노드/삼각형은 아예 방문하지 않음
+bool rtTraverse(vec3 o, vec3 d, float maxDist, bool anyHit,
+                inout uvec4 fi, inout vec3 fn, inout vec3 bc, inout float side, inout float dist) {
+    int ptr = 0;
+    uint stack[BVH_STACK_DEPTH];
+    stack[0] = 0u;
+    float best = maxDist;
+    bool found = false;
+    while (ptr > -1 && ptr < BVH_STACK_DEPTH) {
+        uint ni = stack[ptr];
+        ptr--;
+        float bd;
+        if (!intersectsBVHNodeBounds(o, d, rtBVH.bvhBounds, ni, bd) || bd > best) continue;
+        uvec2 info = uTexelFetch1D(rtBVH.bvhContents, ni).xy;
+        if (bool(info.x & 0xffff0000u)) {
+            if (intersectTriangles(rtBVH.position, rtBVH.index, info.y, info.x & 0x0000ffffu, o, d, best, fi, fn, bc, side, dist)) {
+                found = true;
+                if (anyHit) return true;
+            }
+        } else {
+            uint axis = info.x & 0x0000ffffu;
+            bool ltr = d[axis] >= 0.0;
+            uint l = ni + 1u, r = info.y;
+            ptr++; stack[ptr] = ltr ? r : l;
+            ptr++; stack[ptr] = ltr ? l : r;
+        }
+    }
+    return found;
+}
+
+// 가려짐 여부 (1 = 보임). 그림자를 드리울 수 있는 가림체까지의 최대 거리 = rtFlags.w
+// (장면에서 가장 높은 물체 높이 / sin(광원 고도) 로 CPU에서 계산 → 그 너머 노드는 방문 안 함)
 float rtShadow(vec3 o, vec3 d) {
     if (rtFlags.z < 0.5) return 1.0;
     uvec4 fi; vec3 fn; vec3 bc; float side; float dist;
-    bool hit = bvhIntersectFirstHit(rtBVH, o, d, fi, fn, bc, side, dist);
-    return hit ? 0.0 : 1.0;
+    return rtTraverse(o, d, rtFlags.w, true, fi, fn, bc, side, dist) ? 0.0 : 1.0;
 }
 
 // 반사 광선: 맞으면 true + 맞은 점의 방사휘도
-bool rtTrace(vec3 o, vec3 d, out vec3 col, out float hitDist) {
+// maxDist 밖의 물체는 반사에서 생략 (멀리 있는 반사는 환경맵/하늘로 충분)
+bool rtTrace(vec3 o, vec3 d, float maxDist, out vec3 col, out float hitDist) {
     col = vec3(0.0); hitDist = 1e20;
     if (rtFlags.z < 0.5) return false;
     uvec4 fi; vec3 fn; vec3 bc; float side; float dist;
-    if (!bvhIntersectFirstHit(rtBVH, o, d, fi, fn, bc, side, dist)) return false;
+    if (!rtTraverse(o, d, maxDist, false, fi, fn, bc, side, dist)) return false;
     vec4 alb = textureSampleBarycoord(rtAlbedo, bc, fi.xyz);
     vec4 emi = textureSampleBarycoord(rtEmissive, bc, fi.xyz);
     vec3 n = normalize(fn) * side;
@@ -72,11 +105,12 @@ const avgCache = new WeakMap();
 // 텍스처 평균색 (반사로 보이는 먼 물체용 근사)
 function textureAverage(tex) {
     if (!tex || !tex.image) return [1, 1, 1];
+    if (tex.userData && tex.userData.avg) return tex.userData.avg;   // textures.js가 미리 계산
     if (avgCache.has(tex)) return avgCache.get(tex);
     let out = [1, 1, 1];
     try {
         const c = document.createElement('canvas'); c.width = c.height = 16;
-        const x = c.getContext('2d');
+        const x = c.getContext('2d', { willReadFrequently: true });
         x.drawImage(tex.image, 0, 0, 16, 16);
         const d = x.getImageData(0, 0, 16, 16).data;
         let r = 0, g = 0, b = 0;
@@ -91,7 +125,9 @@ function textureAverage(tex) {
 
 export function updateRTScene({ bvh, geometry, materials }) {
     if (!bvh || !geometry) { rtUniforms.rtFlags.value.z = 0; return; }
+    const T0 = performance.now();
     rtUniforms.rtBVH.value.updateFrom(bvh);
+    const T1 = performance.now();
     const mi = geometry.attributes.materialIndex;
     const n = geometry.attributes.position.count;
     const alb = new Float32Array(n * 4), emi = new Float32Array(n * 4);
@@ -103,6 +139,7 @@ export function updateRTScene({ bvh, geometry, materials }) {
         const ei = m.emissiveIntensity ?? 1;
         return [c.r * t[0], c.g * t[1], c.b * t[2], e.r * et[0] * ei, e.g * et[1] * ei, e.b * et[2] * ei];
     });
+    const T2 = performance.now();
     for (let i = 0; i < n; i++) {
         const k = mi ? mi.getX(i) : 0;
         const mc = matCols[k] || [0.8, 0.8, 0.8, 0, 0, 0];
@@ -112,6 +149,17 @@ export function updateRTScene({ bvh, geometry, materials }) {
     rtUniforms.rtAlbedo.value.updateFrom(new THREE.BufferAttribute(alb, 4));
     rtUniforms.rtEmissive.value.updateFrom(new THREE.BufferAttribute(emi, 4));
     rtUniforms.rtFlags.value.z = 1;
+    if (window.__prof) console.log(`    bvh ${(T1 - T0).toFixed(0)} · colors ${(T2 - T1).toFixed(0)} · attr ${(performance.now() - T2).toFixed(0)} ms (${n} verts)`);
+    geometry.computeBoundingBox();
+    sceneTop = geometry.boundingBox.max.y;
+    updateShadowRange();
+}
+
+// 그림자 광선 길이: 가장 높은 물체 꼭대기에 닿는 거리까지만 (광원이 낮을수록 길어짐)
+let sceneTop = 400;
+export function updateShadowRange() {
+    const sinEl = Math.max(0.05, rtUniforms.rtLightDir.value.y);
+    rtUniforms.rtFlags.value.w = Math.min(5000, (sceneTop + 2) / sinEl);
 }
 
 // ------------------------------------------------------------
@@ -135,12 +183,18 @@ const FRAG_INJECT = /* glsl */`
         RE_Direct(rtL, geometryPosition, geometryNormal, geometryViewDir, geometryClearcoatNormal, material, reflectedLight);
     }
     if (rtFlags.y > 0.5 && material.roughness < 0.4) {
-        vec3 rtR = reflect(-rtV, rtN);
-        vec3 hc; float hd;
-        if (rtTrace(vRtWorldPos + rtN * rtBias, rtR, hc, hd)) {
-            vec3 fr = EnvironmentBRDF(geometryNormal, geometryViewDir, material.specularColor, material.specularF90, material.roughness);
-            float k = 1.0 - smoothstep(0.12, 0.4, material.roughness);
-            reflectedLight.indirectSpecular = mix(reflectedLight.indirectSpecular, hc * fr, k);
+        // 반사율이 낮은 픽셀(정면에서 본 비금속 등)은 광선을 쏘지 않음: 눈에 거의 안 보이는 비용 절약
+        vec3 fr = EnvironmentBRDF(geometryNormal, geometryViewDir, material.specularColor, material.specularF90, material.roughness);
+        float k = 1.0 - smoothstep(0.12, 0.4, material.roughness);
+        // 200m 너머는 반사 광선 대신 환경맵 반사로 서서히 전환 (멀리선 반사된 물체가 몇 픽셀에 불과)
+        float camDist = length(cameraPosition - vRtWorldPos);
+        k *= 1.0 - smoothstep(150.0, 250.0, camDist);
+        if (max(fr.r, max(fr.g, fr.b)) * k > 0.06) {
+            vec3 rtR = reflect(-rtV, rtN);
+            vec3 hc; float hd;
+            if (rtTrace(vRtWorldPos + rtN * rtBias, rtR, 600.0, hc, hd)) {
+                reflectedLight.indirectSpecular = mix(reflectedLight.indirectSpecular, hc * fr, k);
+            }
         }
     }
 }

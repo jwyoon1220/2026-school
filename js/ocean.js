@@ -9,8 +9,8 @@
 //    (패스트레이싱은 누적이 필요해 파도를 멈춘 순간을 렌더링)
 // ------------------------------------------------------------
 import * as THREE from 'three';
-import { RT_GLSL, rtUniforms } from './rt.js?v=d28ac09c';
-import { NIGHT_SKY_GLSL, nightUniforms } from './nightsky.js?v=fe15788c';
+import { RT_GLSL, rtUniforms } from './rt.js?v=02423be4';
+import { NIGHT_SKY_GLSL, nightUniforms } from './nightsky.js?v=a5a49d5e';
 
 const G = 9.81;
 // [파장 m, 진폭 m, 방향(라디안, 진행 방향), 가파름 Q, 위상]
@@ -145,25 +145,32 @@ void main() {
     if (R.y < 0.002) R = normalize(vec3(R.x, 0.002 + abs(R.y) * 0.3, R.z));
 
     // ---- 반사 광선: BVH (물체) → 없으면 밤하늘 ----
+    // 수면에 비친 상은 "눈과 물체 사이"의 물 위에만 생긴다. 반사될 물체(부두·등대·바위)는
+    // 모두 650m 안에 있으므로 그 너머 수면, 그리고 반사율(F)이 낮은 발밑 수면은 하늘만 샘플.
+    // (수 km 밖 배의 불빛 반사는 아래 GGX 반짝임이 담당)
     vec3 refl; float hd;
-    if (!(rtFlags.y > 0.5 && rtTrace(vWorld + n * 0.05, R, refl, hd))) {
-        refl = nightSky(R, false);
-    }
+    bool traced = rtFlags.y > 0.5 && F > 0.035 && dist < 650.0 && rtTrace(vWorld + n * 0.05, R, 650.0, refl, hd);
+    if (!traced) refl = nightSky(R, false);
 
     // ---- 주광원(달/태양) 하이라이트: GGX로 원반 반사를 넓게 (달빛 길) ----
     vec3 L = rtLightDir;
     vec3 H = normalize(L + V);
     float a = rough * rough + 0.004;
     float nl = max(dot(n, L), 0.0);
+    vec3 spec = rtLightColor * ggx(max(dot(n, H), 0.0), a) * F * 0.25 / max(nv, 0.05) * nl * step(0.0, L.y);
+    // 그림자 광선은 하이라이트가 실제로 보이는 픽셀(달빛 길)에서만
     float vis = 1.0;
-    if (rtFlags.x > 0.5 && L.y > 0.0) vis = rtShadow(vWorld + n * 0.05, L);
-    vec3 spec = rtLightColor * ggx(max(dot(n, H), 0.0), a) * F * 0.25 / max(nv, 0.05) * nl * vis * step(0.0, L.y);
+    if (rtFlags.x > 0.5 && L.y > 0.0 && dot(spec, vec3(0.333)) > 0.002) vis = rtShadow(vWorld + n * 0.05, L);
+    spec *= vis;
 
     // ---- 등대 / 집어등 반짝임 (점광원 GGX, 수면에 길게 번짐) ----
     for (int i = 0; i < 8; i++) {
         vec4 g = uGlints[i];
         if (g.w <= 0.0) continue;
         vec3 Lp = g.xyz - vWorld;
+        // 반짝임은 광원과 거의 같은 방위(화면에서 광원 아래 세로 띠)에만 생김 → 나머지 픽셀은 건너뜀
+        vec2 toL = normalize(Lp.xz), toE = normalize(cameraPosition.xz - vWorld.xz);
+        if (dot(toL, -toE) < 0.94) continue;
         float d2 = dot(Lp, Lp);
         vec3 Ld = Lp * inversesqrt(d2);
         vec3 Hp = normalize(Ld + V);
@@ -186,7 +193,7 @@ void main() {
 
     // 수평선 박무
     float haze = 1.0 - exp(-dist * 0.00018);
-    col = mix(col, nightSky(normalize(vec3(-V.x, 0.015, -V.z)), false), haze);
+    col = mix(col, skyHaze(normalize(vec3(-V.x, 0.015, -V.z))), haze);
 
     gl_FragColor = vec4(col, 1.0);
     #include <tonemapping_fragment>

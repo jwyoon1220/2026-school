@@ -4,7 +4,7 @@
 // dirty 플래그/리셋을 트리거한다. GUI 자체는 데이터를 소유하지 않음.
 // ------------------------------------------------------------
 import GUI from 'lil-gui';
-import { state } from './state.js?v=f4ef0eaf';
+import { state } from './state.js?v=c93ac15a';
 import { SCENE_LABELS } from './scenes.js?v=24405aee';
 
 // 각 설명은 astro.js 계산(JPL Horizons와 대조)으로 확인한 내용
@@ -26,6 +26,7 @@ export function setupGUI(cb) {
     const rt = gui.addFolder('레이트레이싱');
     rt.add(p, 'rtShadows').name('BVH 그림자 광선').onChange(cb.onRTFlags);
     rt.add(p, 'rtReflections').name('BVH 반사 광선').onChange(cb.onRTFlags);
+    rt.add(p, 'depthPrepass').name('깊이 프리패스');
     rt.add(p, 'targetFPS', 20, 60, 5).name('목표 FPS');
 
     const sky = gui.addFolder('실제 밤하늘 (바다 장면)');

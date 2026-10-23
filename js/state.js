@@ -35,6 +35,7 @@ export const state = {
         renderMode: 'raytrace',
         rtShadows: true,
         rtReflections: true,
+        depthPrepass: false,     // 깊이 프리패스 (early-Z가 있는 GPU에서 오버드로 셰이딩 절약; SwiftShader에선 이득 없음)
         quality: 'low',          // 'low' | 'high' (quality.js의 PRESETS 키, 시작 시 자동 감지)
         // 이동 중 미리보기: 'auto' = 패스트레이싱을 시도하다가 목표 FPS가 안 나오면 래스터로 전환
         previewMode: 'auto',

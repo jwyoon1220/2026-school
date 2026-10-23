@@ -5,20 +5,20 @@
 import * as THREE from 'three';
 import { computeBoundsTree, disposeBoundsTree } from 'three-mesh-bvh';
 
-import { state, allEntities, addEntity, clearEntities, makeId, markEnvironmentDirty } from './state.js?v=f4ef0eaf';
+import { state, allEntities, addEntity, clearEntities, makeId, markEnvironmentDirty } from './state.js?v=c93ac15a';
 import { makeSkyTexture } from './sky.js?v=af550388';
 import { buildPathTracerScene } from './scene-build.js?v=8e57a869';
-import { createPathTracerCore, stepFrame, onInteract, resetAdaptive, resetSceneGenerator, onWindowResize } from './renderer-core.js?v=8818eb3d';
-import { setupGUI } from './gui.js?v=65aa37bb';
+import { createPathTracerCore, stepFrame, onInteract, resetAdaptive, resetSceneGenerator, onWindowResize } from './renderer-core.js?v=50a4a803';
+import { setupGUI } from './gui.js?v=440eff51';
 import { loadModelFile } from './loader.js?v=e811bb98';
 import { SCENES, applyNightToMaterials, OCEAN_LIGHTHOUSE } from './scenes.js?v=24405aee';
 import { createPlayer } from './player.js?v=af925a16';
-import { createRaster } from './raster.js?v=60b700ba';
+import { createRaster } from './raster.js?v=5fa054cf';
 import { PRESETS, detectQuality } from './quality.js?v=82cb5ead';
-import { rtUniforms, updateRTScene, patchObject } from './rt.js?v=d28ac09c';
+import { rtUniforms, updateRTScene, patchObject, updateShadowRange } from './rt.js?v=02423be4';
 import { computeSky, PLANET_LABELS } from './astro.js?v=2b909c8d';
-import { createNightSky, loadSkyAssets, applyAstro } from './nightsky.js?v=fe15788c';
-import { createOceanMesh, oceanSnapshotGeometry } from './ocean.js?v=aa45742b';
+import { createNightSky, loadSkyAssets, applyAstro } from './nightsky.js?v=a5a49d5e';
+import { createOceanMesh, oceanSnapshotGeometry } from './ocean.js?v=9f673752';
 
 THREE.BufferGeometry.prototype.computeBoundsTree = computeBoundsTree;
 THREE.BufferGeometry.prototype.disposeBoundsTree = disposeBoundsTree;
@@ -57,6 +57,7 @@ const raster = createRaster(renderer);
 const core = createPathTracerCore(renderer, camera, raster.scene);
 core.rtScale = preset().rtStart;
 renderer.setPixelRatio(params.renderMode === 'raytrace' ? core.rtScale : 1);
+core.rasterRender = (r, cam) => raster.render(r, cam, params.depthPrepass);
 const ptMat = core.ptRenderer.material;
 const nightSky = createNightSky(renderer);
 function applyRenderSettings() {
@@ -154,14 +155,19 @@ function refreshNight(full) {
     rtUniforms.rtLightDir.value.copy(res.key.dir);
     rtUniforms.rtLightColor.value.copy(res.key.color);
     rtUniforms.rtAmbient.value.copy(res.ambient);
+    updateShadowRange();
     if (full) {
         lastFullEnv = performance.now();
-        const W = preset().low ? 1024 : 2048;
-        const env = nightSky.renderEquirect(W, W / 2, res.key);
-        if (envTex) envTex.dispose();
-        envTex = env.dataTexture;
-        ptMat.envMapInfo.updateFrom(envTex);
-        ptMat.environmentIntensity = 1.0;
+        // 패스트레이서 환경맵(CPU 다운로드 + 중요도 샘플링 표)은 패스트레이싱 모드일 때만 생성
+        const needPT = params.renderMode === 'pathtrace';
+        const W = needPT ? (preset().low ? 1024 : 2048) : 512;
+        const env = nightSky.renderEquirect(W, W / 2, res.key, needPT);
+        if (needPT) {
+            if (envTex) envTex.dispose();
+            envTex = env.dataTexture;
+            ptMat.envMapInfo.updateFrom(envTex);
+            ptMat.environmentIntensity = 1.0;
+        }
         raster.setNightEnvironment(nightSky.dome, env.pmrem, res.key, res.ambient);
         if (lastBuild && applyNightToMaterials(lastBuild.materials, res.palette.night)) {
             ptMat.materials.updateFrom(lastBuild.materials, lastBuild.textures);
@@ -199,10 +205,13 @@ function rebuildScene() {
     }
     raster.setContent(res.group);
     if (!res.ok) { infoEl.innerText = 'Error: No BVH generated'; return false; }
+    const tA = performance.now();
     patchObject(res.group);
     lastBuild = { materials: res.materials, textures: res.textures, geometry: res.geometry, bvh: res.bvh };
     updateRTScene(lastBuild);
+    const tB = performance.now();
     refreshEnvironment();
+    if (window.__prof) console.log(`  RT 데이터 ${(tB - tA).toFixed(0)} ms, 환경 ${(performance.now() - tB).toFixed(0)} ms`);
     return true;
 }
 
@@ -229,6 +238,7 @@ function loadScene(name, keepPlayer = false) {
         if (token !== loadToken) return;
         const t0 = performance.now();
         const built = SCENES[name](preset());
+        const tBuild = performance.now();
         if (built.night) {
             loadingEl.textContent = 'NASA 별 지도 불러오는 중…';
             try { await loadSkyAssets(!preset().low); skyAssetsReady = true; } catch (e) { console.error('별 지도 로드 실패', e); }
@@ -255,11 +265,14 @@ function loadScene(name, keepPlayer = false) {
         updateExtrasVisibility();
         applyRenderSettings();
         if (built.night && params.renderMode === 'pathtrace') refreshOceanSnapshot();
+        const tPre = performance.now();
         rebuildScene();
+        const tBVH = performance.now();
         resetAdaptive(core);
         let tris = 0;
         for (const e of built.entities) if (e.mesh) tris += e.mesh.geometry.attributes.position.count / 3;
-        console.log(`장면 '${name}': ${built.entities.length} 메시, ${Math.round(tris)} 삼각형, ${(performance.now() - t0).toFixed(0)} ms`);
+        console.log(`장면 '${name}': ${built.entities.length} 메시, ${Math.round(tris)} 삼각형, ${(performance.now() - t0).toFixed(0)} ms ` +
+            `(생성 ${(tBuild - t0).toFixed(0)} · BVH/업로드 ${(tBVH - tPre).toFixed(0)})`);
         loadingEl.style.display = 'none';
     }, 30);
 }
@@ -324,6 +337,8 @@ function animate(now = performance.now()) {
     const moved = player.update(dt);
     if (!lastBuild) { renderer.render(raster.scene, camera); return; }
 
+    // 파도/등대가 움직이는 장면은 매 프레임 렌더, 나머지는 변화가 있을 때만
+    params.animating = !!(current && current.night);
     if (current && current.night) {
         const rtMode = params.renderMode === 'raytrace';
         // 파도/시간은 레이트레이싱 모드에서만 흐름 (패스트레이싱은 정지 장면을 누적)
@@ -375,4 +390,4 @@ document.addEventListener('visibilitychange', () => {
 applyRenderSettings();
 loadScene(params.scene);
 animate();
-window.__app = { params, player, core, loadScene, onRenderMode, onSkyChange, get fps() { return core.fps; } };
+window.__app = { params, player, core, renderer, camera, rtUniforms, loadScene, onRenderMode, onSkyChange, get fps() { return core.fps; } };

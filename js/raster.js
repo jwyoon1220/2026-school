@@ -9,7 +9,7 @@
 // ------------------------------------------------------------
 import * as THREE from 'three';
 import { makeSkyBackground } from './sky.js?v=af550388';
-import { rtUniforms } from './rt.js?v=d28ac09c';
+import { rtUniforms, updateShadowRange } from './rt.js?v=02423be4';
 
 export function createRaster(renderer) {
     renderer.shadowMap.enabled = false;   // 그림자는 BVH 광선으로
@@ -18,6 +18,11 @@ export function createRaster(renderer) {
     const hemi = new THREE.HemisphereLight(0x8899bb, 0x443322, 1);
     scene.add(hemi);
 
+    // 깊이 전용 머티리얼: 색 쓰기 없음 + 살짝 뒤로 밀어서(polygonOffset) 본 패스가 LessEqual로 통과
+    const prepassScene = new THREE.Scene();
+    prepassScene.overrideMaterial = new THREE.MeshBasicMaterial({
+        colorWrite: false, side: THREE.DoubleSide, polygonOffset: true, polygonOffsetFactor: 1, polygonOffsetUnits: 1,
+    });
     const pmrem = new THREE.PMREMGenerator(renderer);
     let envRT = null;
     let content = null;
@@ -29,6 +34,7 @@ export function createRaster(renderer) {
         rtUniforms.rtLightDir.value.copy(dir).normalize();
         rtUniforms.rtLightColor.value.copy(color);
         rtUniforms.rtAmbient.value.copy(ambient);
+        updateShadowRange();
     };
 
     return {
@@ -74,5 +80,19 @@ export function createRaster(renderer) {
             setKey(key.dir, key.color, ambient);
         },
         follow() { /* 그림자 카메라 불필요 */ },
+        // 깊이 프리패스: 싼 셰이더로 깊이만 먼저 그린 뒤 본 패스를 그리면,
+        // 가려진 픽셀은 early-Z로 버려져 비싼 셰이딩(BVH 그림자/반사 광선)을 한 번만 수행.
+        // 병합 메시가 화면 전체에 걸쳐 있어 앞→뒤 정렬이 불가능한 도시 장면에서 특히 효과가 큼.
+        render(renderer, camera, prepass = true) {
+            if (!prepass || !content) { renderer.render(scene, camera); return; }
+            const prevAuto = renderer.autoClear;
+            renderer.clear(true, true, true);
+            prepassScene.add(content);
+            renderer.render(prepassScene, camera);
+            scene.add(content);
+            renderer.autoClear = false;
+            renderer.render(scene, camera);
+            renderer.autoClear = prevAuto;
+        },
     };
 }

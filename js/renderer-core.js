@@ -130,6 +130,7 @@ export function resetPathTracer(core) {
 
 // 씬/조명이 바뀜 → 누적 리셋 (카메라 이동은 stepFrame이 직접 처리)
 export function onInteract(core) {
+    core.rtDirty = true;
     core.ptRenderer.reset();
     setGrid(core, 1);
     core.updatesPerFrame = 1;
@@ -154,7 +155,8 @@ export function resetAdaptive(core) {
 
 function drawRaster(core, renderer, camera) {
     renderer.setRenderTarget(null);
-    renderer.render(core.rasterScene, camera);
+    if (core.rasterRender) core.rasterRender(renderer, camera);
+    else renderer.render(core.rasterScene, camera);
 }
 
 function drawPT(core, renderer, opacity, blur) {
@@ -188,7 +190,7 @@ export function stepFrame(core, renderer, camera, params, quality, { moved, rebu
     //  누적이 없으므로 매 프레임 완성된 이미지. 목표 FPS에 맞춰 렌더 해상도(픽셀 비율)를 조절.
     if (params.renderMode === 'raytrace') {
         if (core.mode !== 'raytrace') { core.mode = 'raytrace'; core.lastAdapt = now; }
-        if (now - core.lastAdapt > 500) {
+        if (now - core.lastAdapt > 500 && (params.animating || now - core.lastMove < 1000)) {
             core.lastAdapt = now;
             let s = core.rtScale;
             if (core.avgDt > targetMs * 1.1) s = Math.max(quality.rtMin, s * 0.9);
@@ -196,10 +198,16 @@ export function stepFrame(core, renderer, camera, params, quality, { moved, rebu
             if (Math.abs(s - core.rtScale) > 0.01) {
                 core.rtScale = s;
                 renderer.setPixelRatio(s);
+                core.rtDirty = true;
             }
         }
-        drawRaster(core, renderer, camera);
-        report(core, onInfo, now, `레이트레이싱 · 해상도 ${Math.round(core.rtScale * 100)}%`);
+        // 정지 화면 + 애니메이션 없음 → 다시 그리지 않음 (캔버스는 마지막 프레임 유지, GPU 유휴)
+        const idle = !moved && !params.animating && !core.rtDirty && now - core.lastMove > 300;
+        if (!idle) {
+            drawRaster(core, renderer, camera);
+            core.rtDirty = false;
+        }
+        report(core, onInfo, now, idle ? '레이트레이싱 · 정지 (재렌더 생략)' : `레이트레이싱 · 해상도 ${Math.round(core.rtScale * 100)}%`);
         return;
     }
     if (core.mode === 'raytrace' || renderer.getPixelRatio() !== 1) {
