@@ -29,7 +29,12 @@ export const state = {
     },
     params: {
         // 장면 / 품질
-        scene: 'city',
+        scene: 'ocean',
+        // 렌더 모드: 'raytrace' = 래스터 + 픽셀별 BVH 그림자/반사 광선 (기본, 실시간)
+        //            'pathtrace' = three-gpu-pathtracer 누적 패스트레이싱
+        renderMode: 'raytrace',
+        rtShadows: true,
+        rtReflections: true,
         quality: 'low',          // 'low' | 'high' (quality.js의 PRESETS 키, 시작 시 자동 감지)
         // 이동 중 미리보기: 'auto' = 패스트레이싱을 시도하다가 목표 FPS가 안 나오면 래스터로 전환
         previewMode: 'auto',
@@ -49,6 +54,15 @@ export const state = {
         sunElevation: 24,
         sunSize: 3.0,
         sunIntensity: 3.0,
+        // 실제 밤하늘 (바다 장면): 날짜/시각은 관측지 현지 시각
+        skyDate: '2026-08-12 23:30',
+        tzOffset: 9,             // KST = UTC+9
+        latitude: 37.80,         // 강릉 경포 앞바다
+        longitude: 128.91,
+        timeSpeed: 0,            // 0 = 고정, 60 = 1초에 1분
+        starIntensity: 1.6,
+        moonLight: 0.35,         // 보름달 조도 (사진 노출 기준 상대값)
+        lightPollution: 1.0,
         // 플레이어
         walkSpeed: 4.5,
         fov: 70,

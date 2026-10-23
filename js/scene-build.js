@@ -112,8 +112,10 @@ function sameTextures(a, b) {
     return true;
 }
 
-export function buildPathTracerScene({ entities, camera, renderer, ptRenderer, ptSceneGenerator, textureSize = 1024 }) {
-    const { visible, culled, total } = cullEntities(entities, camera);
+export function buildPathTracerScene({ entities, camera, renderer, ptRenderer, ptSceneGenerator, textureSize = 1024, mode = 'pathtrace' }) {
+    // ptOnly: 패스트레이싱 모드에서만 쓰는 엔티티 (예: 바다 정지 스냅샷)
+    const usable = entities.filter((e) => !e.ptOnly || mode === 'pathtrace');
+    const { visible, culled, total } = cullEntities(usable, camera);
 
     const group = new THREE.Group();
     for (const e of visible) {
@@ -149,5 +151,5 @@ export function buildPathTracerScene({ entities, camera, renderer, ptRenderer, p
     material.materials.updateFrom(materials, textures);
     material.lights.updateFrom([], iesTextures || []); // 조명은 하늘(env)이 담당
 
-    return { ok: true, culled, total, group, materials, textures };
+    return { ok: true, culled, total, group, materials, textures, geometry, bvh };
 }

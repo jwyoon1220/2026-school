@@ -9,7 +9,8 @@
 // ------------------------------------------------------------
 import * as THREE from 'three';
 import { getTexture } from './textures.js?v=d035a439';
-import { makeId, createDefaultEntities } from './state.js?v=a3299825';
+import { makeId, createDefaultEntities } from './state.js?v=f4ef0eaf';
+import { oceanSnapshotGeometry } from './ocean.js?v=aa45742b';
 
 function mulberry32(a) {
     return function () {
@@ -587,6 +588,138 @@ function buildWheat(q) {
 }
 
 // ------------------------------------------------------------
+// Scene 4: 밤바다 (강릉 경포 앞바다 근사, 동쪽 = +x 가 바다)
+//   - 부두 끝에서 동해를 바라봄. 등대 섬, 암초, 먼바다 오징어잡이 배(집어등)
+//   - 바다 표면: 레이트레이싱 모드는 ocean.js의 애니메이션 셰이더(래스터 전용),
+//     패스트레이싱 모드는 같은 파도 식의 정지 스냅샷 메시(ptOnly 엔티티)
+// ------------------------------------------------------------
+export const OCEAN_LIGHTHOUSE = [330, 23.7, -160];
+export const OCEAN_BOATS = [[2600, -900], [3300, 400], [4100, -1900], [4700, 1300], [5600, -300], [6200, 2100], [3900, 2600]];
+
+function buildOcean(q) {
+    const S = q.textureSize;
+    const gb = new GeoBuilder();
+    const rng = mulberry32(2026);
+    const mSand = std({ color: 0xc9b48e, map: getTexture('dirt', S), roughness: 0.95 });
+    const mWood = std({ color: 0x6b4f37, roughness: 0.85 });
+    const mDarkWood = std({ color: 0x3b2c20, roughness: 0.9 });
+    const mRock = std({ color: 0x4a4744, roughness: 0.9 });
+    const mWhite = std({ color: 0xe8e8e4, roughness: 0.6 });
+    const mRed = std({ color: 0x9a1810, roughness: 0.5 });
+    const mGlass = std({ color: 0x222a30, roughness: 0.05, metalness: 0.8 });
+    const mLampHouse = std({ color: 0xffffff, emissive: 0xfff0c8, emissiveIntensity: 40, night: { day: 0, k: 40 } });
+    const mPierLamp = std({ color: 0xffffff, emissive: 0xffc27a, emissiveIntensity: 0.3, night: { day: 0.3, k: 6 } });
+    const mPine = std({ color: 0x1d2a17, roughness: 0.9 });
+    const mHull = std({ color: 0x1b2026, roughness: 0.6 });
+    const mBoatLamp = std({ color: 0xffffff, emissive: 0xd8ffd0, emissiveIntensity: 60, night: { day: 0, k: 60 } });
+    const town = getTexture('prewar', S);
+    const mTown = std({ color: 0xbdb6aa, map: town.map, rm: town.rm, roughness: 1, metalness: 1, emissive: 0xffffff, emissiveMap: town.emissive, emissiveIntensity: 0, night: { day: 0, k: 1.4 } });
+    const mRoof = std({ color: 0x3a3836, roughness: 0.9 });
+
+    // ---- 해변 (서쪽 육지) ----
+    gb.box(-900, -4, -900, -40, 0.6, 900, { side: mSand, top: mSand, tile: [8, 8], topTile: 8 });
+    gb.colliders.push({ min: [-900, -4, -900], max: [-40, 0.6, 900] });
+    // 물속으로 이어지는 경사
+    gb.quad(mSand, [-40, 0.6, -900], [-40, 0.6, 900], [10, -3.5, 900], [10, -3.5, -900], [[0, 0], [0, 200], [6, 200], [6, 0]]);
+    // 해송 숲과 해안 마을 (뒤쪽 서쪽)
+    for (let i = 0; i < (q.low ? 80 : 160); i++) {
+        const x = -70 - rng() * 120, z = (rng() - 0.5) * 900, h = 7 + rng() * 6;
+        gb.cylinder(mDarkWood, [x, 0.6, z], [x, 0.6 + h * 0.5, z], 0.25, 0.18, 5, false);
+        gb.cylinder(mPine, [x, 0.6 + h * 0.35, z], [x, 0.6 + h, z], 2.2 + rng(), 0, 7, true);
+    }
+    for (let i = 0; i < (q.low ? 40 : 80); i++) {
+        const x = -230 - rng() * 400, z = (rng() - 0.5) * 1200, w = 12 + rng() * 20, d = 12 + rng() * 20, h = 8 + Math.pow(rng(), 2) * 45;
+        gb.box(x, 0.6, z, x + w, h, z + d, { side: mTown, top: mRoof, tile: [8, 13.6], v0: 0.6 });
+    }
+
+    // ---- 부두 ----
+    const X0 = -45, X1 = 52, W = 1.6, DECK = 2.4;
+    gb.box(X0, DECK - 0.3, -W, X1, DECK, W, { side: mWood, top: mWood, tile: [2, 2], topTile: 2 });
+    gb.colliders.push({ min: [X0, DECK - 0.3, -W], max: [X1, DECK, W] });
+    // 끝단 전망대
+    gb.box(X1, DECK - 0.3, -4.5, X1 + 10, DECK, 4.5, { side: mWood, top: mWood, tile: [2, 2], topTile: 2 });
+    gb.colliders.push({ min: [X1, DECK - 0.3, -4.5], max: [X1 + 10, DECK, 4.5] });
+    // 해변 → 부두 계단 (0.3m 단)
+    for (let k = 0; k < 6; k++) {
+        const x = X0 - 6 + k, y = 0.6 + (k + 1) * 0.3;
+        gb.box(x, 0.6, -W, x + 1, y, W, { side: mDarkWood });
+        gb.colliders.push({ min: [x, 0.6, -W], max: [x + 1, y, W] });
+    }
+    // 기둥
+    for (let x = X0 + 2; x <= X1 + 9; x += 4) for (const z of (x > X1 ? [-4.2, 4.2] : [-W + 0.2, W - 0.2])) {
+        gb.cylinder(mDarkWood, [x, -6, z], [x, DECK - 0.3, z], 0.18, 0.18, 6, false);
+    }
+    // 난간 (충돌 포함)
+    const rail = (xa, za, xb, zb) => {
+        const len = Math.hypot(xb - xa, zb - za), n = Math.max(1, Math.round(len / 2));
+        for (let i = 0; i <= n; i++) {
+            const x = xa + (xb - xa) * i / n, z = za + (zb - za) * i / n;
+            gb.box(x - 0.05, DECK, z - 0.05, x + 0.05, DECK + 1.05, z + 0.05, { side: mWood });
+        }
+        gb.box(Math.min(xa, xb) - 0.04, DECK + 0.95, Math.min(za, zb) - 0.04, Math.max(xa, xb) + 0.04, DECK + 1.07, Math.max(za, zb) + 0.04, { side: mWood });
+        gb.colliders.push({ min: [Math.min(xa, xb) - 0.05, DECK, Math.min(za, zb) - 0.05], max: [Math.max(xa, xb) + 0.05, DECK + 1.1, Math.max(za, zb) + 0.05] });
+    };
+    rail(X0, -W, X1, -W); rail(X0, W, X1, W);
+    rail(X1, -4.5, X1 + 10, -4.5); rail(X1, 4.5, X1 + 10, 4.5); rail(X1 + 10, -4.5, X1 + 10, 4.5);
+    rail(X1, -4.5, X1, -W); rail(X1, W, X1, 4.5);
+    // 부두 가로등
+    for (let x = X0 + 10; x < X1; x += 20) {
+        gb.cylinder(mDarkWood, [x, DECK, W - 0.1], [x, DECK + 3.2, W - 0.1], 0.06, 0.05, 5, false);
+        gb.box(x - 0.18, DECK + 3.0, W - 0.28, x + 0.18, DECK + 3.3, W + 0.08, { side: mPierLamp });
+    }
+
+    // ---- 등대 섬 ----
+    const [LX, , LZ] = OCEAN_LIGHTHOUSE;
+    for (let i = 0; i < 14; i++) {
+        const a = rng() * Math.PI * 2, r = rng() * 14;
+        gb.sphere(mRock, [LX + Math.cos(a) * r, -1.5 + rng() * 1.5, LZ + Math.sin(a) * r], 4 + rng() * 5, 7, 5, 0.6 + rng() * 0.3, 0.45, rng, true);
+    }
+    gb.cylinder(mWhite, [LX, 2, LZ], [LX, 21.6, LZ], 3.0, 2.2, 16, false);
+    for (const y of [8, 15]) gb.cylinder(mRed, [LX, y, LZ], [LX, y + 1.2, LZ], 2.75 - (y - 2) * 0.04, 2.7 - (y - 2) * 0.04, 16, false);
+    gb.cylinder(mRed, [LX, 21.6, LZ], [LX, 22.0, LZ], 3.3, 3.3, 16, true);
+    gb.cylinder(mGlass, [LX, 22.0, LZ], [LX, 25.0, LZ], 1.7, 1.7, 12, false);
+    gb.sphere(mLampHouse, [LX, OCEAN_LIGHTHOUSE[1], LZ], 0.55, 8, 6);
+    gb.cylinder(mRed, [LX, 25.0, LZ], [LX, 26.6, LZ], 1.9, 0.2, 12, true);
+
+    // ---- 암초 / 방파 바위 ----
+    for (let i = 0; i < 26; i++) {
+        const x = 15 + rng() * 120, z = -40 - rng() * 140;
+        gb.sphere(mRock, [x, -1.2, z], 1.5 + rng() * 3.5, 6, 4, 0.55 + rng() * 0.3, 0.5, rng, true);
+    }
+
+    // ---- 오징어잡이 배 (집어등) ----
+    for (const [bx, bz] of OCEAN_BOATS) {
+        const yaw = rng() * Math.PI;
+        const ax = [Math.cos(yaw) * 9, 0, Math.sin(yaw) * 9], az = [-Math.sin(yaw) * 2.6, 0, Math.cos(yaw) * 2.6];
+        gb.obox(mHull, [bx, 0.6, bz], ax, [0, 1.4, 0], az);
+        gb.obox(mHull, [bx - ax[0] * 0.3, 3.0, bz - ax[2] * 0.3], ax.map((v) => v * 0.25), [0, 1.2, 0], az.map((v) => v * 0.7));
+        for (let k = -4; k <= 4; k++) {
+            const t = k / 4.5;
+            gb.box(bx + ax[0] * t - 0.5, 5.2, bz + ax[2] * t - 0.5, bx + ax[0] * t + 0.5, 5.9, bz + ax[2] * t + 0.5, { side: mBoatLamp });
+        }
+    }
+
+    // ---- 패스트레이싱용 바다 스냅샷 (래스터/레이트레이싱 모드에선 숨김) ----
+    const entities = gb.toEntities();
+    const water = new THREE.MeshPhysicalMaterial({ color: 0x020a10, roughness: 0.06, metalness: 0, ior: 1.33, side: THREE.DoubleSide });
+    const snap = new THREE.Mesh(oceanSnapshotGeometry(0, 55, 0, q.low), water);
+    entities.push({
+        id: makeId('ocean'), type: 'mesh', mesh: snap, ptOnly: true,
+        transform: { position: [0, 0, 0], rotation: [0, 0, 0], scale: [1, 1, 1] }, material: {}, pinned: true,
+    });
+    return {
+        entities, colliders: gb.colliders,
+        spawn: { pos: [X1 + 6, DECK + 1.7, 0], yaw: -Math.PI / 2, pitch: 0.12 },
+        env: { exposure: 1.4 },
+        night: true,
+        glints: [
+            { pos: OCEAN_LIGHTHOUSE, color: [1.0, 0.92, 0.75], power: 9000, lighthouse: true },
+            ...OCEAN_BOATS.map(([x, z]) => ({ pos: [x, 5.5, z], color: [0.85, 1.0, 0.85], power: 2.5e5 })),
+        ],
+    };
+}
+
+// ------------------------------------------------------------
 // Scene 3: 재질 쇼케이스 (기존 기본 장면 — 편집 가능한 엔티티)
 // ------------------------------------------------------------
 function buildShowcase(q) {
@@ -605,5 +738,5 @@ function buildShowcase(q) {
     };
 }
 
-export const SCENES = { city: buildCity, wheat: buildWheat, showcase: buildShowcase };
-export const SCENE_LABELS = { '맨해튼풍 애비뉴': 'city', '황금 밀밭': 'wheat', '재질 쇼케이스': 'showcase' };
+export const SCENES = { ocean: buildOcean, city: buildCity, wheat: buildWheat, showcase: buildShowcase };
+export const SCENE_LABELS = { '밤바다 (실제 밤하늘)': 'ocean', '맨해튼풍 애비뉴': 'city', '황금 밀밭': 'wheat', '재질 쇼케이스': 'showcase' };

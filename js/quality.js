@@ -17,6 +17,8 @@ export const PRESETS = {
         transmissiveBounces: 2,
         shadowMapSize: 1024,
         maxSamples: 256,
+        rtMin: 0.4,             // 레이트레이싱 모드 최저 렌더 해상도
+        rtStart: 0.7,
     },
     high: {
         low: false,
@@ -29,6 +31,8 @@ export const PRESETS = {
         transmissiveBounces: 4,
         shadowMapSize: 2048,
         maxSamples: 1024,
+        rtMin: 0.5,
+        rtStart: 1.0,
     },
 };
 

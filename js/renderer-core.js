@@ -104,6 +104,7 @@ export function createPathTracerCore(renderer, camera, rasterScene) {
         prevSampleInt: -1,
         lastAdapt: 0,
         mode: 'init',
+        rtScale: 1,
         compiling: false,
     };
 }
@@ -182,6 +183,30 @@ export function stepFrame(core, renderer, camera, params, quality, { moved, rebu
     const pt = core.ptRenderer;
     const mat = pt.material;
     const targetMs = 1000 / params.targetFPS;
+
+    // ---- 레이트레이싱 모드 (기본): 래스터 1차 가시성 + 픽셀별 BVH 그림자/반사 광선 ----
+    //  누적이 없으므로 매 프레임 완성된 이미지. 목표 FPS에 맞춰 렌더 해상도(픽셀 비율)를 조절.
+    if (params.renderMode === 'raytrace') {
+        if (core.mode !== 'raytrace') { core.mode = 'raytrace'; core.lastAdapt = now; }
+        if (now - core.lastAdapt > 500) {
+            core.lastAdapt = now;
+            let s = core.rtScale;
+            if (core.avgDt > targetMs * 1.1) s = Math.max(quality.rtMin, s * 0.9);
+            else if (core.avgDt < targetMs * 0.7) s = Math.min(1, s * 1.06);
+            if (Math.abs(s - core.rtScale) > 0.01) {
+                core.rtScale = s;
+                renderer.setPixelRatio(s);
+            }
+        }
+        drawRaster(core, renderer, camera);
+        report(core, onInfo, now, `레이트레이싱 · 해상도 ${Math.round(core.rtScale * 100)}%`);
+        return;
+    }
+    if (core.mode === 'raytrace' || renderer.getPixelRatio() !== 1) {
+        renderer.setPixelRatio(1);
+        core.currentScale = -1;
+        core.wasMoving = true;
+    }
 
     // 셰이더 컴파일 중(저사양에서 수 초 걸릴 수 있음)에는 래스터로 바로 보여줌
     if (mat.isCompiling) {

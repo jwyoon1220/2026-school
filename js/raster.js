@@ -1,33 +1,35 @@
 // raster.js
 // ------------------------------------------------------------
-// 래스터 미리보기 씬 (이동 중 / 셰이더 컴파일 중 / 패스트레이싱 첫 샘플 전 바탕).
-// 패스트레이서와 같은 Mesh/머티리얼 객체를 공유하므로 추가 메모리가 거의 없다.
-// 태양 = DirectionalLight + 그림자맵(플레이어를 따라다님), 하늘 = HemisphereLight.
-// sky.js의 조도(E)와 three.js 물리 조명 단위가 같도록 세기를 맞춘다.
+// 래스터 씬 (레이트레이싱 모드의 1차 가시성 + 패스트레이싱 모드의 미리보기/바탕).
+// 패스트레이서와 같은 Mesh/머티리얼 객체를 공유한다.
+//
+// 주광원(태양/달)은 three.js DirectionalLight가 아니라 rt.js 패치가 BVH 그림자
+// 광선과 함께 직접 계산하므로, 여기서는 rtUniforms에 방향/조도만 넘긴다.
+// HemisphereLight + 환경맵(PMREM)이 하늘 주변광/반사를 담당.
 // ------------------------------------------------------------
 import * as THREE from 'three';
 import { makeSkyBackground } from './sky.js?v=af550388';
+import { rtUniforms } from './rt.js?v=d28ac09c';
 
 export function createRaster(renderer) {
-    renderer.shadowMap.enabled = true;
-    renderer.shadowMap.type = THREE.PCFShadowMap;
+    renderer.shadowMap.enabled = false;   // 그림자는 BVH 광선으로
 
     const scene = new THREE.Scene();
-    const sun = new THREE.DirectionalLight(0xffffff, 3);
-    sun.castShadow = true;
-    sun.shadow.bias = -0.0005;
-    sun.shadow.normalBias = 0.05;
-    const S = 70;
-    Object.assign(sun.shadow.camera, { left: -S, right: S, top: S, bottom: -S, near: 1, far: 600 });
-    scene.add(sun, sun.target);
     const hemi = new THREE.HemisphereLight(0x8899bb, 0x443322, 1);
     scene.add(hemi);
 
     const pmrem = new THREE.PMREMGenerator(renderer);
     let envRT = null;
     let content = null;
+    let extras = null;
     let bg = null;
-    const sunDir = new THREE.Vector3(0, 1, 0);
+    let dome = null;
+
+    const setKey = (dir, color, ambient) => {
+        rtUniforms.rtLightDir.value.copy(dir).normalize();
+        rtUniforms.rtLightColor.value.copy(color);
+        rtUniforms.rtAmbient.value.copy(ambient);
+    };
 
     return {
         scene,
@@ -36,15 +38,16 @@ export function createRaster(renderer) {
             content = group;
             if (group) scene.add(group);
         },
-        setShadowSize(n) {
-            if (sun.shadow.mapSize.x === n) return;
-            sun.shadow.mapSize.set(n, n);
-            if (sun.shadow.map) { sun.shadow.map.dispose(); sun.shadow.map = null; }
+        // 래스터 전용 오브젝트 (애니메이션 바다, 등대 빛줄기, 점광원 등)
+        setExtras(group) {
+            if (extras) scene.remove(extras);
+            extras = group;
+            if (group) scene.add(group);
         },
+        setShadowSize() { /* 그림자맵 미사용 (BVH 그림자) */ },
+        // 낮 하늘 (sky.js)
         setEnvironment(params, palette) {
-            sunDir.copy(palette.dir);
-            sun.color.setRGB(...palette.tint);
-            sun.intensity = palette.E;
+            if (dome) { scene.remove(dome); dome = null; }
             const avg = (a, b, t) => a.map((v, i) => v * (1 - t) + b[i] * t);
             hemi.color.setRGB(...avg(palette.horizon, palette.zenith, 0.5));
             hemi.groundColor.setRGB(...palette.ground.map((v) => v * 1.5));
@@ -52,20 +55,24 @@ export function createRaster(renderer) {
             if (bg) bg.dispose();
             bg = makeSkyBackground(params, palette);
             scene.background = bg;
-            // 금속/유리 반사용 환경맵 (PMREM, 환경 변경 시 1회)
             if (envRT) envRT.dispose();
             envRT = pmrem.fromEquirectangular(bg);
             scene.environment = envRT.texture;
+            const amb = new THREE.Color().setRGB(...avg(palette.horizon, palette.zenith, 0.5)).multiplyScalar(Math.PI * params.envIntensity * 0.5);
+            setKey(palette.dir, new THREE.Color(...palette.tint).multiplyScalar(palette.E), amb);
         },
-        // 그림자 카메라를 플레이어 주변으로 이동 (텍셀 단위 스냅으로 그림자 떨림 방지)
-        follow(camera) {
-            const fwd = new THREE.Vector3(0, 0, -1).applyQuaternion(camera.quaternion);
-            const c = camera.position.clone().addScaledVector(fwd.setY(0).normalize(), S * 0.5);
-            const texel = (2 * S) / sun.shadow.mapSize.x;
-            c.x = Math.round(c.x / texel) * texel; c.z = Math.round(c.z / texel) * texel; c.y = 0;
-            sun.target.position.copy(c);
-            sun.position.copy(c).addScaledVector(sunDir, 300);
-            sun.target.updateMatrixWorld();
+        // 밤하늘 (nightsky.js): 돔 배경 + 밤하늘 PMREM
+        setNightEnvironment(skyDome, pmremTex, key, ambient) {
+            if (bg) { bg.dispose(); bg = null; }
+            if (envRT) { envRT.dispose(); envRT = null; }
+            scene.background = null;
+            if (dome !== skyDome) { if (dome) scene.remove(dome); dome = skyDome; scene.add(dome); }
+            scene.environment = pmremTex;
+            hemi.color.copy(ambient).multiplyScalar(1 / Math.PI);
+            hemi.groundColor.copy(ambient).multiplyScalar(0.3 / Math.PI);
+            hemi.intensity = 1;
+            setKey(key.dir, key.color, ambient);
         },
+        follow() { /* 그림자 카메라 불필요 */ },
     };
 }
