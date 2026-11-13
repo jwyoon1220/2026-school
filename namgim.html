@@ -3,11 +3,13 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
-<title>Code17 — 코드로 여는 17개의 목표</title>
-<meta name="description" content="SDGs 17개 목표마다 개발자가 서비스로 기여할 수 있는 방법을 Windows 11 스타일 데스크톱에서 살펴봅니다.">
+<title>남김없이 — 우리 집 냉장고 지킴이</title>
+<meta name="description" content="SDGs 12.3(음식물 쓰레기 절반 줄이기)을 위한 서비스 남김없이의 사업 기획서와 실제 서비스를 Windows 11 스타일 데스크톱에서 만나 보세요.">
 <link rel="preconnect" href="https://cdn.jsdelivr.net">
 <link rel="stylesheet" href="https://cdn.jsdelivr.net/gh/orioncactus/pretendard@v1.3.9/dist/web/variable/pretendardvariable.min.css">
-<link rel="stylesheet" href="code17/style.css">
+<link rel="stylesheet" href="namgim/base.css">
+<link rel="stylesheet" href="namgim/desktop.css">
+<script src="namgim/theme.js"></script>
 </head>
 <body>
 
@@ -41,17 +43,17 @@
 <section id="start" class="flyout" aria-label="시작 메뉴" hidden>
   <div class="start-search">
     <svg viewBox="0 0 24 24"><circle cx="10.5" cy="10.5" r="6.5"/><path d="M15.5 15.5 20 20"/></svg>
-    <input id="start-q" type="search" placeholder="목표, 서비스 아이디어 검색" autocomplete="off">
+    <input id="start-q" type="search" placeholder="앱, 냉장고 재료, 요리 검색" autocomplete="off">
   </div>
   <div id="start-body">
-    <div class="start-head"><h2>고정됨 · SDGs 17개 목표</h2></div>
+    <div class="start-head"><h2>고정됨</h2></div>
     <div id="start-pinned" class="start-grid"></div>
-    <div class="start-head"><h2>앱</h2></div>
+    <div class="start-head"><h2>추천 · 먼저 먹어야 할 것</h2></div>
     <div id="start-apps" class="start-apps"></div>
   </div>
   <div id="start-results" hidden></div>
   <footer class="start-foot">
-    <div class="user"><span class="avatar">D</span><span>개발자</span></div>
+    <div class="user"><span class="avatar">🧊</span><span>우리 집</span></div>
     <button class="icon-btn" id="power" title="전원" aria-label="전원">
       <svg viewBox="0 0 24 24"><path d="M12 3v8"/><path d="M6.3 6.8a8 8 0 1 0 11.4 0"/></svg>
     </button>
@@ -71,7 +73,7 @@
   </div>
   <label class="qs-slider"><svg viewBox="0 0 24 24"><circle cx="12" cy="12" r="4"/><path d="M12 2v2M12 20v2M2 12h2M20 12h2M5 5l1.4 1.4M17.6 17.6 19 19M5 19l1.4-1.4M17.6 6.4 19 5"/></svg>
     <input id="bright" type="range" min="60" max="100" value="100" aria-label="화면 밝기"></label>
-  <div class="qs-foot"><span>Code17 · SDGs Edition</span>
+  <div class="qs-foot"><span>남김없이 · SDG 12.3</span>
     <button class="icon-btn" data-open="settings" title="설정" aria-label="설정"><svg viewBox="0 0 24 24"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.7 1.7 0 0 0 .3 1.8l.1.1a2 2 0 1 1-2.8 2.8l-.1-.1a1.7 1.7 0 0 0-1.8-.3 1.7 1.7 0 0 0-1 1.5V21a2 2 0 1 1-4 0v-.1a1.7 1.7 0 0 0-1.1-1.5 1.7 1.7 0 0 0-1.8.3l-.1.1a2 2 0 1 1-2.8-2.8l.1-.1a1.7 1.7 0 0 0 .3-1.8 1.7 1.7 0 0 0-1.5-1H3a2 2 0 1 1 0-4h.1a1.7 1.7 0 0 0 1.5-1.1 1.7 1.7 0 0 0-.3-1.8l-.1-.1a2 2 0 1 1 2.8-2.8l.1.1a1.7 1.7 0 0 0 1.8.3H9a1.7 1.7 0 0 0 1-1.5V3a2 2 0 1 1 4 0v.1a1.7 1.7 0 0 0 1 1.5 1.7 1.7 0 0 0 1.8-.3l.1-.1a2 2 0 1 1 2.8 2.8l-.1.1a1.7 1.7 0 0 0-.3 1.8V9a1.7 1.7 0 0 0 1.5 1H21a2 2 0 1 1 0 4h-.1a1.7 1.7 0 0 0-1.5 1Z"/></svg></button>
   </div>
 </section>
@@ -85,7 +87,7 @@
 <!-- 작업 표시줄 -->
 <footer id="taskbar">
   <button class="tb-widgets" id="tb-widgets" aria-label="위젯">
-    <span class="w-badge">17</span><span class="w-text"><b>SDGs</b><small>오늘의 목표</small></span>
+    <span class="w-badge">🧊</span><span class="w-text"><b id="w-title">냉장고</b><small id="w-sub">위젯 보기</small></span>
   </button>
   <nav class="tb-center" id="tb-center">
     <button class="tb-btn" id="tb-start" aria-label="시작" title="시작"></button>
@@ -111,7 +113,7 @@
 <section id="lock" aria-label="잠금 화면">
   <div class="lock-time"><div id="lock-clock"></div><div id="lock-date"></div></div>
   <div class="lock-hint">
-    <div class="lock-logo"><b>Code17</b><span>코드로 여는 17개의 목표</span></div>
+    <div class="lock-logo"><b>🧊 남김없이</b><span>우리 집 냉장고 지킴이 · SDG 12.3</span></div>
     <span>클릭하거나 아무 키나 눌러 시작하기</span>
   </div>
 </section>
@@ -119,7 +121,8 @@
 <!-- 종료 화면 -->
 <section id="shutdown" hidden><div class="spinner"></div><p>종료하는 중...</p></section>
 
-<script src="code17/data.js"></script>
-<script src="code17/os.js"></script>
+<script src="namgim/store.js"></script>
+<script src="namgim/recipes.js"></script>
+<script src="namgim/os.js"></script>
 </body>
 </html>
